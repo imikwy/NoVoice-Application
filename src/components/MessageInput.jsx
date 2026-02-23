@@ -101,6 +101,7 @@ export default function MessageInput({ onSend, placeholder, channelId, isDM, tar
 
   // Upload state
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
 
   // Typing indicator
   const typingRef = useRef(false);
@@ -226,6 +227,8 @@ export default function MessageInput({ onSend, placeholder, channelId, isDM, tar
     }
 
     setUploading(true);
+    setUploadError('');
+    let errorMsg = '';
     try {
       const base64 = await new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -253,9 +256,14 @@ export default function MessageInput({ onSend, placeholder, channelId, isDM, tar
       const fullUrl = `${serverBase}${url}`;
       insertAtCursor(type === 'video' ? `[vid:${fullUrl}]` : `[img:${fullUrl}]`);
     } catch (err) {
-      alert(`Upload failed: ${err.message}`);
+      errorMsg = err.message || 'Upload failed';
     } finally {
       setUploading(false);
+      if (errorMsg) {
+        setUploadError(errorMsg);
+        setTimeout(() => setUploadError(''), 4000);
+      }
+      requestAnimationFrame(() => inputRef.current?.focus());
     }
   }, [activeServerApi, insertAtCursor]);
 
@@ -392,6 +400,22 @@ export default function MessageInput({ onSend, placeholder, channelId, isDM, tar
           className="bg-transparent text-sm text-nv-text-primary placeholder-nv-text-tertiary resize-none focus:outline-none leading-relaxed px-3 pt-2.5 pb-1.5 w-full disabled:opacity-50"
           style={{ minHeight: '38px', maxHeight: '160px' }}
         />
+
+        {/* Upload error */}
+        <AnimatePresence>
+          {uploadError && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="px-3 py-1.5 border-t border-nv-danger/20 bg-nv-danger/10">
+                <p className="text-[11px] text-nv-danger">{uploadError}</p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* ── Toolbar ─────────────────────────────────────────────────────── */}
         <div className="flex items-center gap-0.5 px-1.5 pb-1.5 pt-0.5 border-t border-white/[0.04]">
