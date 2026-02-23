@@ -51,6 +51,13 @@
     "directories": {
       "output": "dist-electron"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "imikwy",
+        "repo": "NoVoice-Application"
+      }
+    ],
     "files": [
       "dist/**/*",
       "electron/**/*",

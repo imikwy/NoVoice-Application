@@ -131,8 +131,8 @@ function configureAutoUpdater() {
   if (isDev || isPortable) return;
 
   // You can override these with env vars when building/running packaged app.
-  const owner = process.env.NOVOICE_UPDATER_OWNER || 'ikwy';
-  const repo = process.env.NOVOICE_UPDATER_REPO || 'NoVoice';
+  const owner = process.env.NOVOICE_UPDATER_OWNER || 'imikwy';
+  const repo = process.env.NOVOICE_UPDATER_REPO || 'NoVoice-Application';
 
   try {
     autoUpdater.setFeedURL({
