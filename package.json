@@ -88,7 +88,8 @@
       "oneClick": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "NoVoice"
+      "shortcutName": "NoVoice",
+      "artifactName": "NoVoice-Setup-${version}.${ext}"
     },
     "portable": {
       "artifactName": "NoVoice-portable.exe"
