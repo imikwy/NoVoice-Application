@@ -6,7 +6,7 @@ const { JWT_SECRET } = require('../middleware/auth');
 const onlineUsers = new Map(); // userId -> Set of socket ids
 const voiceChannelMembers = new Map(); // channelId -> Map<userId, user summary>
 const socketVoiceChannel = new Map(); // socketId -> channelId
-const voiceChannelServerMap = new Map(); // channelId -> serverId
+const voiceChannelServerMap = new Map(); // channelId -> serverIdasdasd
 
 const DM_EXPIRY_DAYS = 7;
 
