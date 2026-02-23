@@ -877,4 +877,3 @@ router.delete('/forum/:channelId/:postId/replies/:replyId', authenticateToken, (
 });
 
 module.exports = router;
-
