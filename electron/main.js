@@ -13,6 +13,15 @@ let _updaterStatus = { status: 'idle', message: '' };
 
 const isDev = !app.isPackaged;
 const isPortable = Boolean(process.env.PORTABLE_EXECUTABLE_FILE);
+const exePath = app.getPath('exe').toLowerCase();
+const isUnpackedRuntime = exePath.includes('win-unpacked') || exePath.includes('\\dist-electron\\');
+
+function getUpdaterDisabledReason() {
+  if (isDev) return 'Auto updates are disabled in development.';
+  if (isPortable) return 'Portable build does not support auto updates.';
+  if (isUnpackedRuntime) return 'Auto updates require the installed app (NoVoice Setup), not win-unpacked/standalone exe.';
+  return null;
+}
 
 // Find an available TCP port starting from the given port
 function findAvailablePort(startPort = 3002) {
@@ -128,7 +137,11 @@ function emitUpdaterStatus(payload) {
 }
 
 function configureAutoUpdater() {
-  if (isDev || isPortable) return;
+  const disabledReason = getUpdaterDisabledReason();
+  if (disabledReason) {
+    emitUpdaterStatus({ status: 'disabled', message: disabledReason });
+    return;
+  }
 
   // You can override these with env vars when building/running packaged app.
   const owner = process.env.NOVOICE_UPDATER_OWNER || 'imikwy';
@@ -147,6 +160,8 @@ function configureAutoUpdater() {
 
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
+  // During testing, also receive prerelease updates.
+  autoUpdater.allowPrerelease = true;
 
   autoUpdater.on('checking-for-update', () => {
     emitUpdaterStatus({ status: 'checking', message: 'Checking for updates...' });
@@ -179,39 +194,20 @@ function configureAutoUpdater() {
     });
   });
 
-  autoUpdater.on('update-downloaded', async (info) => {
+  autoUpdater.on('update-downloaded', (info) => {
     emitUpdaterStatus({
       status: 'downloaded',
       message: `Update ready: v${info?.version || 'new'}`,
     });
-
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-
-    const result = await dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      title: 'Update Ready',
-      message: `Version ${info?.version || 'new'} was downloaded.`,
-      detail: 'Restart now to install the update.',
-      buttons: ['Restart now', 'Later'],
-      defaultId: 0,
-      cancelId: 1,
-    });
-
-    if (result.response === 0) {
-      app.isQuitting = true;
-      autoUpdater.quitAndInstall();
-    }
+    // The React UpdateOverlay handles the restart prompt + countdown.
+    // autoInstallOnAppQuit is true so the update installs on next quit anyway.
   });
 }
 
 function checkForAppUpdates(manual = false) {
-  if (isDev) {
-    if (manual) emitUpdaterStatus({ status: 'disabled', message: 'Auto updates are disabled in development.' });
-    return;
-  }
-
-  if (isPortable) {
-    if (manual) emitUpdaterStatus({ status: 'disabled', message: 'Portable build does not support auto updates.' });
+  const disabledReason = getUpdaterDisabledReason();
+  if (disabledReason) {
+    if (manual) emitUpdaterStatus({ status: 'disabled', message: disabledReason });
     return;
   }
 
@@ -227,6 +223,17 @@ app.whenReady().then(() => {
   configureAutoUpdater();
   checkForAppUpdates(false);
   _updateInterval = setInterval(() => checkForAppUpdates(false), 1000 * 60 * 60 * 6);
+
+  if (app.isPackaged && isUnpackedRuntime && mainWindow && !mainWindow.isDestroyed()) {
+    dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      title: 'Auto Update Disabled',
+      message: 'This executable cannot auto-update.',
+      detail: 'Run the installed app (from NoVoice Setup / Start Menu) to receive automatic updates.',
+      buttons: ['OK'],
+      defaultId: 0,
+    }).catch(() => {});
+  }
 });
 
 app.on('window-all-closed', () => {

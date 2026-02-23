@@ -6,6 +6,7 @@ import { VoiceProvider } from './context/VoiceContext';
 import TitleBar from './components/TitleBar';
 import Login from './pages/Login';
 import Home from './pages/Home';
+import UpdateOverlay from './components/UpdateOverlay';
 
 class AppErrorBoundary extends React.Component {
   constructor(props) {
@@ -86,8 +87,11 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <>
+      <UpdateOverlay />
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </>
   );
 }
