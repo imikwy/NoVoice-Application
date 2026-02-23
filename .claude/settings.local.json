@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install)",
+      "Bash(timeout 5 node:*)",
+      "Bash(npx vite build:*)",
+      "Bash(npx electron .)",
+      "Bash(taskkill:*)",
+      "Bash(tasklist:*)",
+      "Bash(curl:*)"
+    ]
+  }
+}

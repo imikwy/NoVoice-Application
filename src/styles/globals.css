@@ -1,0 +1,206 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
+      'Inter', 'Helvetica Neue', Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: #000000;
+    color: #f5f5f7;
+    overflow: hidden;
+    user-select: none;
+    font-feature-settings: 'kern' 1, 'liga' 1, 'calt' 1;
+  }
+
+  /* Apple-style thin scrollbar */
+  ::-webkit-scrollbar {
+    width: 5px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  /* Electron drag region */
+  .drag-region {
+    -webkit-app-region: drag;
+  }
+
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  /* Allow text selection in inputs */
+  input,
+  textarea {
+    user-select: text;
+  }
+
+  /* Apple easing for all transitions */
+  * {
+    transition-timing-function: cubic-bezier(0.25, 0.1, 0.25, 1);
+  }
+}
+
+@layer components {
+  /* Glass morphism */
+  .glass {
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .glass-strong {
+    backdrop-filter: blur(40px) saturate(200%);
+    -webkit-backdrop-filter: blur(40px) saturate(200%);
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  /* Refined input — Apple style */
+  .nv-input {
+    @apply w-full px-4 py-3 rounded-xl
+    text-nv-text-primary placeholder-nv-text-tertiary text-sm
+    focus:outline-none
+    transition-all duration-200;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .nv-input:focus {
+    background: rgba(255, 255, 255, 0.09);
+    border-color: rgba(52, 199, 89, 0.5);
+    box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.12);
+  }
+
+  /* Base button */
+  .nv-button {
+    @apply inline-flex items-center justify-center
+    px-4 py-2 rounded-xl text-sm font-medium
+    transition-all duration-150
+    active:scale-[0.97] select-none;
+  }
+
+  /* Primary — Apple green */
+  .nv-button-primary {
+    @apply nv-button font-semibold;
+    background: #34C759;
+    color: #000;
+    box-shadow: 0 2px 12px rgba(52, 199, 89, 0.3);
+  }
+
+  .nv-button-primary:hover {
+    background: #28a745;
+    box-shadow: 0 4px 20px rgba(52, 199, 89, 0.4);
+  }
+
+  /* Secondary — glass */
+  .nv-button-secondary {
+    @apply nv-button text-nv-text-primary;
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+  }
+
+  .nv-button-secondary:hover {
+    background: rgba(255, 255, 255, 0.10);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  /* Ghost — minimal */
+  .nv-button-ghost {
+    @apply nv-button text-nv-text-secondary;
+    background: transparent;
+  }
+
+  .nv-button-ghost:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: #f5f5f7;
+  }
+
+  /* Danger */
+  .nv-button-danger {
+    @apply nv-button font-semibold text-white;
+    background: #FF3B30;
+    box-shadow: 0 2px 12px rgba(255, 59, 48, 0.25);
+  }
+
+  .nv-button-danger:hover {
+    background: #e0352b;
+    box-shadow: 0 4px 20px rgba(255, 59, 48, 0.35);
+  }
+
+  /* Card */
+  .nv-card {
+    @apply rounded-2xl;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+
+  /* Section label */
+  .nv-label {
+    @apply text-[10px] font-semibold uppercase text-nv-text-tertiary;
+    letter-spacing: 0.1em;
+  }
+
+  /* Sidebar nav item */
+  .nv-sidebar-item {
+    @apply w-full flex items-center gap-2.5 px-2 py-1.5
+    rounded-lg text-sm text-nv-text-secondary
+    transition-all duration-150 cursor-pointer;
+  }
+
+  .nv-sidebar-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: #f5f5f7;
+  }
+
+  .nv-sidebar-item-active {
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: #f5f5f7 !important;
+  }
+
+  /* Small icon button */
+  .nv-icon-btn {
+    @apply flex items-center justify-center rounded-lg
+    text-nv-text-tertiary
+    transition-all duration-150 active:scale-90;
+  }
+
+  .nv-icon-btn:hover {
+    color: #f5f5f7;
+    background: rgba(255, 255, 255, 0.07);
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .glow-accent {
+    box-shadow: 0 0 12px rgba(52, 199, 89, 0.45);
+  }
+
+  .glow-danger {
+    box-shadow: 0 0 12px rgba(255, 59, 48, 0.4);
+  }
+}

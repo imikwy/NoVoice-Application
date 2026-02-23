@@ -1,0 +1,18 @@
+node_modules/
+
+# Build output
+dist/
+dist-electron/
+
+# Electron builder temp/cache
+release/
+out/
+
+# Local runtime data
+server/novoice.db
+
+# Secrets / local config
+.env
+.env.local
+.env.production
+.env.*.local
