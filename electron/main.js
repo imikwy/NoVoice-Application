@@ -261,6 +261,7 @@ ipcMain.on('window-maximize', () => {
 });
 ipcMain.on('window-close', () => mainWindow.hide());
 ipcMain.handle('window-is-maximized', () => mainWindow.isMaximized());
+ipcMain.handle('app-version', () => app.getVersion());
 
 // ── Local server (Self-Host) ─────────────────────────────────────────────────
 

@@ -3,11 +3,15 @@ import { Minus, Square, X, Copy } from 'lucide-react';
 
 export default function TitleBar() {
   const [isMaximized, setIsMaximized] = useState(false);
+  const [appVersion, setAppVersion] = useState('');
 
   useEffect(() => {
     if (window.electronAPI) {
       window.electronAPI.isMaximized().then(setIsMaximized);
       window.electronAPI.onMaximizeChange?.(setIsMaximized);
+      window.electronAPI.getVersion?.().then((version) => {
+        if (version) setAppVersion(String(version));
+      }).catch(() => {});
     }
   }, []);
 
@@ -26,6 +30,11 @@ export default function TitleBar() {
         <span className="text-[11px] font-semibold text-nv-text-secondary tracking-wider uppercase">
           NoVoice
         </span>
+        {appVersion && (
+          <span className="text-[10px] font-medium text-white/35 tracking-wide">
+            v{appVersion}
+          </span>
+        )}
       </div>
 
       {/* Right: Window controls */}

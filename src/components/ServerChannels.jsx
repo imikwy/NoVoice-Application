@@ -44,6 +44,7 @@ import { useAuth } from '../context/AuthContext';
 import { useVoice } from '../context/VoiceContext';
 import Modal from './Modal';
 import ServerSettingsModal from './ServerSettingsModal';
+import UserAvatar from './UserAvatar';
 
 export default function ServerChannels() {
   const { user } = useAuth();
@@ -56,6 +57,7 @@ export default function ServerChannels() {
     refreshServers,
     setActiveView,
     voiceChannelOccupancy,
+    voiceChannelParticipants,
     activeServerApi,
   } = useApp();
   const { activeVoiceChannelId, joinVoice } = useVoice();
@@ -342,12 +344,13 @@ export default function ServerChannels() {
     const isActive = activeChannel?.id === channel.id;
     const isVoiceActive = activeVoiceChannelId === channel.id;
     const occupancy = voiceChannelOccupancy.get(channel.id) || 0;
+    const voiceUsers = channel.type === 'voice' ? (voiceChannelParticipants.get(channel.id) || []) : [];
     const isDraggingThis = dragging?.id === channel.id;
     const isDropTarget = dragOverId === channel.id && dragging?.id !== channel.id;
 
     return (
+      <div key={channel.id}>
       <div
-        key={channel.id}
         draggable={isOwner}
         onDragStart={(e) => handleDragStart(e, channel.id, 'channel')}
         onDragOver={(e) => handleDragOver(e, channel.id)}
@@ -416,6 +419,20 @@ export default function ServerChannels() {
             <Trash2 size={10} />
           </button>
         )}
+      </div>
+      {/* Voice channel participants */}
+      {channel.type === 'voice' && voiceUsers.length > 0 && (
+        <div className="pl-6 pb-0.5 space-y-0.5">
+          {voiceUsers.map((p) => (
+            <div key={p.id} className="flex items-center gap-1.5 px-2 py-1 rounded-lg">
+              <UserAvatar user={p} size="xs" showStatus={false} />
+              <span className="text-xs text-nv-text-tertiary truncate">
+                {p.display_name || p.username}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       </div>
     );
   };

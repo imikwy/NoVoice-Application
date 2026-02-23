@@ -42,19 +42,43 @@ export default function VoiceBar({ collapsed }) {
   }, [serverName, serverUrl]);
 
   useEffect(() => {
-    if (!socket || !voiceConnected) return;
+    if (!voiceConnected) return;
 
-    const updatePing = () => {
-      const nextPing = socket.io?.engine?.ping;
-      if (typeof nextPing === 'number' && Number.isFinite(nextPing)) {
-        setPingMs(Math.round(nextPing));
+    const normalizedServerUrl = (typeof serverUrl === 'string' && serverUrl.trim())
+      ? serverUrl.replace(/\/$/, '')
+      : getServerUrl();
+
+    let disposed = false;
+
+    const measurePing = async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const startedAt = performance.now();
+
+      try {
+        await fetch(`${normalizedServerUrl}/api/health`, {
+          method: 'GET',
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (disposed) return;
+        const elapsedMs = performance.now() - startedAt;
+        setPingMs(Math.max(1, Math.round(elapsedMs)));
+      } catch {
+        if (disposed) return;
+        setPingMs(null);
+      } finally {
+        clearTimeout(timeoutId);
       }
     };
 
-    updatePing();
-    const id = setInterval(updatePing, 1400);
-    return () => clearInterval(id);
-  }, [socket, voiceConnected]);
+    measurePing();
+    const id = setInterval(measurePing, 5000);
+    return () => {
+      disposed = true;
+      clearInterval(id);
+    };
+  }, [voiceConnected, serverUrl, socket]);
 
   if (!voiceConnected || !activeVoiceChannelId) return null;
 
@@ -130,10 +154,10 @@ export default function VoiceBar({ collapsed }) {
             <AnimatePresence>
               {showNetworkInfo && (
                 <motion.div
-                  initial={{ opacity: 0, y: 4 }}
+                  initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 4 }}
-                  className="absolute left-0 top-full mt-1 w-52 z-50 rounded-lg bg-nv-surface border border-white/[0.08] shadow-xl px-2.5 py-2"
+                  exit={{ opacity: 0, y: -4 }}
+                  className="absolute left-0 bottom-full mb-1 w-52 z-[80] rounded-lg bg-nv-surface border border-white/[0.08] shadow-xl px-2.5 py-2"
                 >
                   <p className="text-[10px] text-nv-text-tertiary uppercase tracking-wide mb-1">Voice Network</p>
                   <div className="text-[11px] text-nv-text-secondary flex items-center justify-between gap-2">

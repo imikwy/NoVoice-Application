@@ -35,6 +35,7 @@ function emitVoiceState(io, channelId) {
     io.to(`server:${serverId}`).emit('voice:channel:update', {
       channelId,
       participantCount: participants.length,
+      participants,
     });
   }
 }

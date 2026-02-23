@@ -18,6 +18,7 @@ export function AppProvider({ children }) {
   const [serverDetails, setServerDetails] = useState({});
   const [onlineUsers, setOnlineUsers] = useState(new Set());
   const [voiceChannelOccupancy, setVoiceChannelOccupancy] = useState(new Map());
+  const [voiceChannelParticipants, setVoiceChannelParticipants] = useState(new Map());
 
   // Multi-server support: API client and socket for own/local servers
   const [activeServerApi, setActiveServerApi] = useState(() => api);
@@ -165,13 +166,21 @@ export function AppProvider({ children }) {
       );
     });
 
-    const handleVoiceUpdate = ({ channelId, participantCount }) => {
+    const handleVoiceUpdate = ({ channelId, participantCount, participants }) => {
       setVoiceChannelOccupancy((prev) => {
         const next = new Map(prev);
         if (participantCount > 0) next.set(channelId, participantCount);
         else next.delete(channelId);
         return next;
       });
+      if (participants !== undefined) {
+        setVoiceChannelParticipants((prev) => {
+          const next = new Map(prev);
+          if (participants.length > 0) next.set(channelId, participants);
+          else next.delete(channelId);
+          return next;
+        });
+      }
     };
 
     socket.on('friend:request-received', refreshFriendState);
@@ -256,6 +265,7 @@ export function AppProvider({ children }) {
         serverDetails, loadServerDetails,
         onlineUsers,
         voiceChannelOccupancy,
+        voiceChannelParticipants,
         refreshFriends,
         refreshServers,
         // Multi-server

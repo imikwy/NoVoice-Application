@@ -257,7 +257,13 @@ router.get('/calendar/:channelId', authenticateToken, (req, res) => {
     const channel = getChannelForMember(req.params.channelId, req.user.id, res);
     if (!channel) return;
     const events = getDb()
-      .prepare('SELECT * FROM calendar_events WHERE channel_id = ? ORDER BY start_date ASC')
+      .prepare(`
+        SELECT ce.*, u.username as creator_username, u.display_name as creator_display_name
+        FROM calendar_events ce
+        LEFT JOIN users u ON ce.created_by = u.id
+        WHERE ce.channel_id = ?
+        ORDER BY ce.start_date ASC
+      `)
       .all(channel.id);
     res.json({ events });
   } catch (err) {
@@ -278,7 +284,12 @@ router.post('/calendar/:channelId', authenticateToken, (req, res) => {
     getDb().prepare(
       'INSERT INTO calendar_events (id, channel_id, title, description, start_date, end_date, color, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(id, channel.id, title.trim(), description ?? '', start_date, end_date ?? null, color ?? '#007AFF', req.user.id);
-    const event = getDb().prepare('SELECT * FROM calendar_events WHERE id = ?').get(id);
+    const event = getDb().prepare(`
+      SELECT ce.*, u.username as creator_username, u.display_name as creator_display_name
+      FROM calendar_events ce
+      LEFT JOIN users u ON ce.created_by = u.id
+      WHERE ce.id = ?
+    `).get(id);
     emitChannelUpdated(req, channel.id);
     res.status(201).json({ event });
   } catch (err) {

@@ -1,22 +1,76 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CalendarDays, Plus, Trash2, X, Check, Clock } from 'lucide-react';
+import {
+  CalendarDays,
+  Plus,
+  Trash2,
+  X,
+  Check,
+  Clock,
+  Grid3X3,
+  List,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 
 const EVENT_COLORS = ['#007AFF', '#34C759', '#FF9500', '#FF3B30', '#AF52DE', '#FF2D55', '#5AC8FA', '#FFCC00'];
+const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function formatEventDate(dateStr) {
   if (!dateStr) return '';
-  const d = new Date(dateStr + 'T00:00:00');
+  const d = new Date(`${dateStr}T00:00:00`);
   return d.toLocaleDateString([], { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function formatMonthTitle(date) {
+  return date.toLocaleDateString([], { month: 'long', year: 'numeric' });
+}
+
+function toDateKey(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function parseDateOnly(dateStr) {
+  return new Date(`${dateStr}T00:00:00`);
+}
+
+function mondayIndex(day) {
+  return (day + 6) % 7;
+}
+
+function buildMonthGrid(baseDate) {
+  const monthStart = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
+  const monthEnd = new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0);
+
+  const gridStart = new Date(monthStart);
+  gridStart.setDate(monthStart.getDate() - mondayIndex(monthStart.getDay()));
+
+  const gridEnd = new Date(monthEnd);
+  gridEnd.setDate(monthEnd.getDate() + (6 - mondayIndex(monthEnd.getDay())));
+
+  const days = [];
+  const cur = new Date(gridStart);
+  while (cur <= gridEnd) {
+    days.push(new Date(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return days;
 }
 
 function isUpcoming(dateStr) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  return new Date(dateStr + 'T00:00:00') >= today;
+  return parseDateOnly(dateStr) >= today;
+}
+
+function creatorLabel(event) {
+  return event.creator_display_name || event.creator_username || 'Unknown';
 }
 
 export default function CalendarView({ channel, serverId }) {
@@ -30,6 +84,11 @@ export default function CalendarView({ channel, serverId }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [viewMode, setViewMode] = useState('month');
+  const [visibleMonth, setVisibleMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
 
   const [formTitle, setFormTitle] = useState('');
   const [formDate, setFormDate] = useState('');
@@ -97,17 +156,55 @@ export default function CalendarView({ channel, serverId }) {
     }
   };
 
+  const eventsByDate = useMemo(() => {
+    const grouped = new Map();
+    events.forEach((event) => {
+      if (!grouped.has(event.start_date)) grouped.set(event.start_date, []);
+      grouped.get(event.start_date).push(event);
+    });
+    return grouped;
+  }, [events]);
+
+  const monthGridDays = useMemo(() => buildMonthGrid(visibleMonth), [visibleMonth]);
+
   const upcoming = events.filter((e) => isUpcoming(e.start_date));
   const past = events.filter((e) => !isUpcoming(e.start_date));
 
+  const previousMonth = () => {
+    setVisibleMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+  };
+
+  const nextMonth = () => {
+    setVisibleMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+  };
+
   return (
     <div className="flex-1 flex flex-col bg-nv-content min-w-0">
-      {/* Header */}
       <div className="h-12 flex items-center px-4 border-b border-white/[0.05] shrink-0 gap-2">
         <CalendarDays size={16} className="text-nv-text-tertiary shrink-0" />
-        <span className="text-sm font-semibold text-nv-text-primary truncate flex-1">
-          {channel.name}
-        </span>
+        <span className="text-sm font-semibold text-nv-text-primary truncate flex-1">{channel.name}</span>
+
+        <div className="flex items-center gap-1 p-0.5 rounded-lg border border-white/[0.07] bg-white/[0.03]">
+          <button
+            onClick={() => setViewMode('month')}
+            className={`px-2 py-1 text-xs rounded-md transition-all flex items-center gap-1 ${
+              viewMode === 'month' ? 'bg-white/[0.10] text-nv-text-primary' : 'text-nv-text-tertiary hover:text-nv-text-secondary'
+            }`}
+          >
+            <Grid3X3 size={12} />
+            Month
+          </button>
+          <button
+            onClick={() => setViewMode('list')}
+            className={`px-2 py-1 text-xs rounded-md transition-all flex items-center gap-1 ${
+              viewMode === 'list' ? 'bg-white/[0.10] text-nv-text-primary' : 'text-nv-text-tertiary hover:text-nv-text-secondary'
+            }`}
+          >
+            <List size={12} />
+            List
+          </button>
+        </div>
+
         {isOwner && (
           <button
             onClick={() => setShowForm((v) => !v)}
@@ -120,7 +217,6 @@ export default function CalendarView({ channel, serverId }) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
-        {/* Add event form */}
         <AnimatePresence>
           {showForm && (
             <motion.form
@@ -156,7 +252,6 @@ export default function CalendarView({ channel, serverId }) {
                   rows={2}
                   className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-nv-text-primary placeholder-nv-text-tertiary resize-none outline-none focus:border-nv-accent/40 transition-colors"
                 />
-                {/* Color picker */}
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-nv-text-tertiary mb-2">Color</p>
                   <div className="flex gap-2 flex-wrap">
@@ -213,13 +308,81 @@ export default function CalendarView({ channel, serverId }) {
               {isOwner ? 'Add the first event above.' : 'No events have been scheduled.'}
             </p>
           </motion.div>
+        ) : viewMode === 'month' ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-xl border border-white/[0.08] bg-white/[0.03] px-2 py-1.5">
+              <button
+                onClick={previousMonth}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-nv-text-tertiary hover:text-nv-text-primary hover:bg-white/[0.06]"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span className="text-sm font-semibold text-nv-text-primary">{formatMonthTitle(visibleMonth)}</span>
+              <button
+                onClick={nextMonth}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-nv-text-tertiary hover:text-nv-text-primary hover:bg-white/[0.06]"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-7 gap-2">
+              {WEEKDAY_LABELS.map((label) => (
+                <div key={label} className="text-[10px] font-semibold uppercase tracking-wide text-nv-text-tertiary px-2 py-1">
+                  {label}
+                </div>
+              ))}
+
+              {monthGridDays.map((date) => {
+                const dayKey = toDateKey(date);
+                const dayEvents = eventsByDate.get(dayKey) || [];
+                const inCurrentMonth = date.getMonth() === visibleMonth.getMonth();
+                const isToday = toDateKey(date) === toDateKey(new Date());
+
+                return (
+                  <div
+                    key={dayKey}
+                    className={`min-h-[120px] rounded-xl border px-2 py-1.5 ${
+                      inCurrentMonth
+                        ? 'border-white/[0.08] bg-white/[0.03]'
+                        : 'border-white/[0.04] bg-black/10'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={`text-xs font-semibold ${inCurrentMonth ? 'text-nv-text-primary' : 'text-nv-text-tertiary/60'}`}>
+                        {date.getDate()}
+                      </span>
+                      {isToday && <span className="w-1.5 h-1.5 rounded-full bg-nv-accent" />}
+                    </div>
+
+                    <div className="space-y-1">
+                      {dayEvents.slice(0, 3).map((event) => (
+                        <div
+                          key={event.id}
+                          title={`${event.title} · by ${creatorLabel(event)}`}
+                          className="rounded-md px-1.5 py-1 text-[10px] leading-tight border border-white/[0.06] bg-white/[0.04]"
+                        >
+                          <div className="flex items-center gap-1 mb-0.5">
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: event.color || '#007AFF' }} />
+                            <span className="text-nv-text-primary truncate">{event.title}</span>
+                          </div>
+                          <p className="text-nv-text-tertiary truncate">by {creatorLabel(event)}</p>
+                        </div>
+                      ))}
+                      {dayEvents.length > 3 && (
+                        <p className="text-[10px] text-nv-text-tertiary px-1">+{dayEvents.length - 3} more</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         ) : (
           <div className="space-y-6">
             {upcoming.length > 0 && (
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-nv-text-tertiary px-1 mb-2">
-                  Upcoming
-                </p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-nv-text-tertiary px-1 mb-2">Upcoming</p>
                 <div className="space-y-2">
                   {upcoming.map((event) => (
                     <EventCard key={event.id} event={event} isOwner={isOwner} onDelete={handleDelete} />
@@ -229,9 +392,7 @@ export default function CalendarView({ channel, serverId }) {
             )}
             {past.length > 0 && (
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-nv-text-tertiary px-1 mb-2">
-                  Past
-                </p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-nv-text-tertiary px-1 mb-2">Past</p>
                 <div className="space-y-2 opacity-60">
                   {past.map((event) => (
                     <EventCard key={event.id} event={event} isOwner={isOwner} onDelete={handleDelete} />
@@ -263,6 +424,7 @@ function EventCard({ event, isOwner, onDelete }) {
           <Clock size={10} className="text-nv-text-tertiary shrink-0" />
           <span className="text-[11px] text-nv-text-tertiary">{formatEventDate(event.start_date)}</span>
         </div>
+        <p className="text-[11px] text-nv-text-tertiary mt-1">Created by {creatorLabel(event)}</p>
         {event.description && (
           <p className="text-xs text-nv-text-secondary mt-1 line-clamp-2">{event.description}</p>
         )}

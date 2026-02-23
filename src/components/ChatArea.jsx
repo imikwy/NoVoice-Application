@@ -361,34 +361,34 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
             </span>
             <div className="ml-auto flex items-center gap-2" ref={voiceControlsRef}>
               {isInThisVoiceChannel && (
-                <div className="flex items-center gap-1.5 rounded-xl border border-white/[0.08] bg-[#2A2D33]/85 px-1.5 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+                <div className="flex items-center gap-0.5">
                   <div className="relative">
-                    <div className="flex items-center rounded-lg border border-white/[0.06] bg-white/[0.03] overflow-hidden">
+                    <div className="flex items-center rounded-xl overflow-hidden">
                       <button
                         onClick={toggleSelfMute}
-                        className={`w-9 h-8 flex items-center justify-center transition-all ${
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs transition-all ${
                           selfMuted
                             ? 'text-nv-warning bg-nv-warning/10'
-                            : 'text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.05]'
+                            : 'text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.06]'
                         }`}
                         title={selfMuted ? 'Unmute mic' : 'Mute mic'}
                       >
-                        {selfMuted ? <MicOff size={13} /> : <Mic size={13} />}
+                        {selfMuted ? <MicOff size={12} /> : <Mic size={12} />}
+                        <span>{selfMuted ? 'Muted' : 'Mic'}</span>
                       </button>
-                      <span className="w-px h-4 bg-white/[0.08]" />
                       <button
                         onClick={() => {
                           setShowOutputMenu(false);
                           setShowMicMenu((prev) => !prev);
                         }}
-                        className={`w-7 h-8 flex items-center justify-center transition-all ${
+                        className={`px-1.5 py-1.5 text-xs transition-all rounded-r-xl ${
                           showMicMenu
                             ? 'text-nv-text-primary bg-white/[0.08]'
-                            : 'text-nv-text-tertiary hover:text-nv-text-primary hover:bg-white/[0.05]'
+                            : 'text-nv-text-tertiary hover:text-nv-text-primary hover:bg-white/[0.06]'
                         }`}
                         title="Microphone settings"
                       >
-                        <ChevronDown size={12} className={showMicMenu ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                        <ChevronDown size={9} className={`transition-transform ${showMicMenu ? 'rotate-180' : ''}`} />
                       </button>
                     </div>
 
@@ -398,7 +398,7 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
                           initial={{ opacity: 0, y: 6, scale: 0.98 }}
                           animate={{ opacity: 1, y: 0, scale: 1 }}
                           exit={{ opacity: 0, y: 6, scale: 0.98 }}
-                          className="absolute right-0 mt-2 w-72 rounded-2xl border border-white/[0.08] bg-[#24272D]/95 backdrop-blur-xl shadow-[0_20px_45px_rgba(0,0,0,0.45)] z-40 p-3"
+                          className="absolute right-0 mt-2 w-72 rounded-2xl border border-white/[0.08] bg-nv-channels/95 backdrop-blur-xl shadow-[0_20px_45px_rgba(0,0,0,0.45)] z-40 p-3"
                         >
                           <div className="flex items-center justify-between mb-2">
                             <p className="text-[10px] text-nv-text-tertiary uppercase tracking-wide">Input</p>
@@ -478,35 +478,35 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
                     </AnimatePresence>
                   </div>
 
-                  <span className="w-px h-6 bg-white/[0.08]" />
+                  <div className="w-px h-3.5 bg-white/[0.1] mx-0.5" />
 
                   <div className="relative">
-                    <div className="flex items-center rounded-lg border border-white/[0.06] bg-white/[0.03] overflow-hidden">
+                    <div className="flex items-center rounded-xl overflow-hidden">
                       <button
                         onClick={toggleDeafen}
-                        className={`w-9 h-8 flex items-center justify-center transition-all ${
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs transition-all ${
                           deafened
                             ? 'text-nv-warning bg-nv-warning/10'
-                            : 'text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.05]'
+                            : 'text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.06]'
                         }`}
-                        title={deafened ? 'Enable headphones' : 'Disable headphones'}
+                        title={deafened ? 'Enable audio' : 'Disable audio'}
                       >
-                        {deafened ? <VolumeX size={13} /> : <Headphones size={13} />}
+                        {deafened ? <VolumeX size={12} /> : <Headphones size={12} />}
+                        <span>{deafened ? 'Deafened' : 'Audio'}</span>
                       </button>
-                      <span className="w-px h-4 bg-white/[0.08]" />
                       <button
                         onClick={() => {
                           setShowMicMenu(false);
                           setShowOutputMenu((prev) => !prev);
                         }}
-                        className={`w-7 h-8 flex items-center justify-center transition-all ${
+                        className={`px-1.5 py-1.5 text-xs transition-all rounded-r-xl ${
                           showOutputMenu
                             ? 'text-nv-text-primary bg-white/[0.08]'
-                            : 'text-nv-text-tertiary hover:text-nv-text-primary hover:bg-white/[0.05]'
+                            : 'text-nv-text-tertiary hover:text-nv-text-primary hover:bg-white/[0.06]'
                         }`}
                         title="Output settings"
                       >
-                        <ChevronDown size={12} className={showOutputMenu ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                        <ChevronDown size={9} className={`transition-transform ${showOutputMenu ? 'rotate-180' : ''}`} />
                       </button>
                     </div>
 
@@ -516,7 +516,7 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
                           initial={{ opacity: 0, y: 6, scale: 0.98 }}
                           animate={{ opacity: 1, y: 0, scale: 1 }}
                           exit={{ opacity: 0, y: 6, scale: 0.98 }}
-                          className="absolute right-0 mt-2 w-72 rounded-2xl border border-white/[0.08] bg-[#24272D]/95 backdrop-blur-xl shadow-[0_20px_45px_rgba(0,0,0,0.45)] z-40 p-3"
+                          className="absolute right-0 mt-2 w-72 rounded-2xl border border-white/[0.08] bg-nv-channels/95 backdrop-blur-xl shadow-[0_20px_45px_rgba(0,0,0,0.45)] z-40 p-3"
                         >
                           <div className="flex items-center justify-between mb-2">
                             <p className="text-[10px] text-nv-text-tertiary uppercase tracking-wide">Output</p>
@@ -603,23 +603,23 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
                   whileTap={{ scale: 0.96 }}
                   onClick={handleJoinVoice}
                   disabled={joiningVoice}
-                  className="nv-button-primary disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs text-nv-accent hover:bg-nv-accent/[0.08] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {joiningVoice ? (
-                    <Loader2 size={14} className="animate-spin" />
+                    <Loader2 size={12} className="animate-spin" />
                   ) : (
-                    <PhoneCall size={14} />
+                    <PhoneCall size={12} />
                   )}
-                  {joiningVoice ? 'Joining...' : 'Join Voice'}
+                  {joiningVoice ? 'Joining…' : 'Join Voice'}
                 </motion.button>
               ) : (
                 <motion.button
                   whileTap={{ scale: 0.96 }}
                   onClick={handleLeaveVoice}
-                  className="nv-button-secondary flex items-center gap-2 border-nv-danger/40 text-nv-danger hover:bg-nv-danger/10"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs text-nv-danger hover:bg-nv-danger/[0.08] transition-all"
                 >
-                  <PhoneOff size={14} />
-                  Leave Voice
+                  <PhoneOff size={12} />
+                  Leave
                 </motion.button>
               )}
             </div>
