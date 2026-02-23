@@ -1,7 +1,7 @@
 {
   "name": "novoice",
   "author": "ikwy",
-  "version": "1.0.1",
+  "version": "0.7.1",
   "description": "NoVoice",
   "main": "electron/main.js",
   "scripts": {
@@ -9,7 +9,8 @@
     "build": "vite build",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:build": "vite build && electron-builder",
-    "electron:publish": "vite build && electron-builder --publish always",
+    "electron:publish": "vite build && electron-builder --win nsis --publish always",
+    "electron:publish:portable": "vite build && electron-builder --win portable --publish always",
     "electron:build:portable": "vite build && electron-builder --win portable",
     "server:dev": "node server/index.js",
     "server:start": "node server/index.js"
