@@ -26,6 +26,7 @@ import { useSocket } from '../context/SocketContext';
 import { useVoice } from '../context/VoiceContext';
 import UserAvatar from './UserAvatar';
 import MessageInput from './MessageInput';
+import MessageContent from './MessageContent';
 import RulesView from './RulesView';
 import CalendarView from './CalendarView';
 import TasksView from './TasksView';
@@ -804,9 +805,7 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
                     </span>
                   </div>
                 )}
-                <p className="text-sm text-nv-text-primary/90 break-words leading-relaxed">
-                  {msg.content}
-                </p>
+                <MessageContent content={msg.content} />
               </div>
             </motion.div>
           );

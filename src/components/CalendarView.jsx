@@ -339,17 +339,25 @@ export default function CalendarView({ channel, serverId }) {
                 const inCurrentMonth = date.getMonth() === visibleMonth.getMonth();
                 const isToday = toDateKey(date) === toDateKey(new Date());
 
+                const hasEvents = dayEvents.length > 0;
+
                 return (
                   <div
                     key={dayKey}
-                    className={`min-h-[120px] rounded-xl border px-2 py-1.5 ${
-                      inCurrentMonth
-                        ? 'border-white/[0.08] bg-white/[0.03]'
-                        : 'border-white/[0.04] bg-black/10'
+                    className={`min-h-[120px] rounded-xl border px-2 py-1.5 transition-colors ${
+                      !inCurrentMonth
+                        ? 'border-white/[0.04] bg-black/10'
+                        : hasEvents
+                        ? 'border-nv-accent/[0.18] bg-nv-accent/[0.07]'
+                        : 'border-white/[0.08] bg-white/[0.03]'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className={`text-xs font-semibold ${inCurrentMonth ? 'text-nv-text-primary' : 'text-nv-text-tertiary/60'}`}>
+                      <span className={`text-xs font-semibold ${
+                        isToday
+                          ? 'text-nv-accent'
+                          : inCurrentMonth ? 'text-nv-text-primary' : 'text-nv-text-tertiary/60'
+                      }`}>
                         {date.getDate()}
                       </span>
                       {isToday && <span className="w-1.5 h-1.5 rounded-full bg-nv-accent" />}
@@ -359,7 +367,7 @@ export default function CalendarView({ channel, serverId }) {
                       {dayEvents.slice(0, 3).map((event) => (
                         <div
                           key={event.id}
-                          title={`${event.title} · by ${creatorLabel(event)}`}
+                          title={`${event.title} ï¿½ by ${creatorLabel(event)}`}
                           className="rounded-md px-1.5 py-1 text-[10px] leading-tight border border-white/[0.06] bg-white/[0.04]"
                         >
                           <div className="flex items-center gap-1 mb-0.5">

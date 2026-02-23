@@ -18,9 +18,12 @@ class ApiClient {
     this.token = localStorage.getItem('nv_token');
   }
 
+  get serverBase() {
+    return this._baseServerUrl ?? getServerUrl();
+  }
+
   get baseUrl() {
-    const serverUrl = this._baseServerUrl ?? getServerUrl();
-    return `${serverUrl}/api`;
+    return `${this.serverBase}/api`;
   }
 
   setToken(token) {

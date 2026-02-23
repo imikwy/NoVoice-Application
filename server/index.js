@@ -16,11 +16,14 @@ async function startServer(portOverride) {
   const { getDb } = require('./database/init');
   getDb().prepare('UPDATE users SET status = ?').run('offline');
 
+  const path = require('path');
+  const fs = require('fs');
   const authRoutes = require('./routes/auth');
   const friendRoutes = require('./routes/friends');
   const serverRoutes = require('./routes/servers');
   const messageRoutes = require('./routes/messages');
   const channelContentRoutes = require('./routes/channelContent');
+  const uploadRoutes = require('./routes/uploads');
   const { setupWebSocket } = require('./websocket/handler');
 
   const app = express();
@@ -39,6 +42,12 @@ async function startServer(portOverride) {
   app.use('/api/servers', serverRoutes);
   app.use('/api/messages', messageRoutes);
   app.use('/api/channel-content', channelContentRoutes);
+  app.use('/api/uploads', uploadRoutes);
+
+  // Serve uploaded files as static assets
+  const uploadsDir = path.join(__dirname, '../uploads');
+  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+  app.use('/uploads', express.static(uploadsDir));
 
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', name: 'NoVoice Server', version: '1.0.0' });
