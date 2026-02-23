@@ -532,24 +532,57 @@ export default function MessageInput({ onSend, placeholder, channelId, isDM, tar
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 4, scale: 0.96 }}
                   transition={{ duration: 0.12 }}
-                  className="absolute bottom-full left-0 mb-2 z-50 rounded-2xl bg-nv-channels border border-white/[0.08] shadow-2xl p-3"
+                  className="absolute bottom-full left-0 mb-2 z-50 rounded-2xl bg-nv-channels border border-white/[0.08] shadow-2xl p-2.5 flex flex-col gap-1.5"
                 >
-                  <p className="text-[10px] text-nv-text-tertiary uppercase tracking-wide mb-2">
-                    Text Color
-                  </p>
-                  <div className="grid grid-cols-6 gap-1.5">
-                    {PRESET_COLORS.map((color) => (
+                  {/* Row 1: vibrant colors */}
+                  <div className="flex items-center gap-1.5">
+                    {PRESET_COLORS.slice(0, 8).map((color) => (
                       <button
                         key={color}
                         type="button"
                         onClick={() => applyColor(color)}
                         title={color}
-                        className={`w-6 h-6 rounded-full transition-all hover:scale-110 border-2 ${
-                          activeColor === color ? 'border-white/80 scale-110' : 'border-transparent'
-                        }`}
-                        style={{ backgroundColor: color }}
+                        className="w-5 h-5 rounded-full transition-all hover:scale-110 shrink-0"
+                        style={{
+                          backgroundColor: color,
+                          outline: activeColor === color ? `2px solid ${color}` : '2px solid transparent',
+                          outlineOffset: '2px',
+                          transform: activeColor === color ? 'scale(1.15)' : undefined,
+                        }}
                       />
                     ))}
+                  </div>
+                  {/* Row 2: neutrals + remove */}
+                  <div className="flex items-center gap-1.5">
+                    {PRESET_COLORS.slice(8).map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => applyColor(color)}
+                        title={color}
+                        className="w-5 h-5 rounded-full transition-all hover:scale-110 shrink-0"
+                        style={{
+                          backgroundColor: color,
+                          boxShadow: color === '#FFFFFF' ? 'inset 0 0 0 1px rgba(255,255,255,0.15)' : undefined,
+                          outline: activeColor === color ? `2px solid ${color}` : '2px solid transparent',
+                          outlineOffset: '2px',
+                          transform: activeColor === color ? 'scale(1.15)' : undefined,
+                        }}
+                      />
+                    ))}
+                    {activeColor && (
+                      <>
+                        <div className="w-px h-3.5 bg-white/[0.1] mx-0.5 shrink-0" />
+                        <button
+                          type="button"
+                          onClick={closeColor}
+                          title="Remove color"
+                          className="w-5 h-5 rounded-full border border-white/[0.15] bg-white/[0.05] flex items-center justify-center hover:bg-white/[0.12] transition-all shrink-0"
+                        >
+                          <X size={8} className="text-white/50" />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </motion.div>
               )}

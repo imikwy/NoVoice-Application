@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download, RefreshCw, Check } from 'lucide-react';
+import { Download, RefreshCw, Check, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function extractVersion(message) {
@@ -15,7 +15,19 @@ export default function UpdateOverlay() {
   const [version, setVersion] = useState('');
   const [countdown, setCountdown] = useState(8);
 
+  // Small toast for non-critical statuses
+  const [toast, setToast] = useState(null); // { msg, type: 'info'|'error' }
+  const toastTimer = useRef(null);
+
   const countdownTimer = useRef(null);
+
+  const showToast = (msg, type = 'info', duration = 4000) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ msg, type });
+    if (duration > 0) {
+      toastTimer.current = setTimeout(() => setToast(null), duration);
+    }
+  };
 
   const isElectron = Boolean(window.electronAPI?.updater);
 
@@ -63,8 +75,27 @@ export default function UpdateOverlay() {
         setPhase('ready');
         startCountdown();
 
+      } else if (s.status === 'checking') {
+        setPhase('hidden');
+        showToast('Checking for updates…', 'info', 0); // stays until next status
+
+      } else if (s.status === 'up-to-date') {
+        setPhase('hidden');
+        stopCountdown();
+        showToast('NoVoice is up to date.', 'info', 3500);
+
+      } else if (s.status === 'error') {
+        setPhase('hidden');
+        stopCountdown();
+        showToast(`Update error: ${s.message || 'Unknown error'}`, 'error', 8000);
+
+      } else if (s.status === 'disabled') {
+        setPhase('hidden');
+        stopCountdown();
+        showToast(`Auto-update disabled: ${s.message}`, 'warn', 5000);
+
       } else {
-        // up-to-date, error, disabled, idle → hide
+        // idle → hide silently
         setPhase('hidden');
         stopCountdown();
       }
@@ -79,6 +110,7 @@ export default function UpdateOverlay() {
     return () => {
       unsub?.();
       stopCountdown();
+      if (toastTimer.current) clearTimeout(toastTimer.current);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isElectron]);
@@ -98,6 +130,43 @@ export default function UpdateOverlay() {
   if (!isElectron) return null;
 
   return (
+    <>
+    {/* ── Small status toast (bottom-right) ─────────────────────────────── */}
+    <AnimatePresence>
+      {toast && (
+        <motion.div
+          key="update-toast"
+          initial={{ opacity: 0, y: 12, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 12, scale: 0.95 }}
+          transition={{ duration: 0.2 }}
+          className="fixed bottom-5 right-5 z-[9998] flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl border shadow-2xl select-none"
+          style={{
+            background: 'rgba(18,18,18,0.95)',
+            borderColor: toast.type === 'error' ? 'rgba(255,59,48,0.3)' : 'rgba(255,255,255,0.08)',
+          }}
+        >
+          {toast.type === 'error' ? (
+            <AlertCircle size={14} className="text-nv-danger shrink-0" />
+          ) : toast.type === 'warn' ? (
+            <AlertCircle size={14} className="text-yellow-400 shrink-0" />
+          ) : toast.msg.includes('Checking') ? (
+            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.2, ease: 'linear' }}>
+              <Loader2 size={14} className="text-nv-accent shrink-0" />
+            </motion.div>
+          ) : (
+            <CheckCircle2 size={14} className="text-nv-accent shrink-0" />
+          )}
+          <span className="text-xs text-white/70 max-w-[260px]">{toast.msg}</span>
+          <button
+            onClick={() => { if (toastTimer.current) clearTimeout(toastTimer.current); setToast(null); }}
+            className="ml-1 text-white/30 hover:text-white/60 transition-colors text-xs leading-none"
+          >✕</button>
+        </motion.div>
+      )}
+    </AnimatePresence>
+
+    {/* ── Full-screen overlay (downloading / ready) ──────────────────────── */}
     <AnimatePresence>
       {phase !== 'hidden' && (
         <motion.div
@@ -227,5 +296,6 @@ export default function UpdateOverlay() {
         </motion.div>
       )}
     </AnimatePresence>
+    </>
   );
 }
