@@ -8,7 +8,7 @@
     "icon": "🐍",
     "iconColor": "#32d74b",
     "tags": ["games"],
-    "bundleUrl": "FILL_IN_AFTER_BUILD",
-    "repository": "https://github.com/YOUR_ORG/novoice-snake"
+    "bundleUrl": "https://github.com/imikwy/NoVoice-Snake/releases/download/Release/app.bundle",
+    "repository": "https://github.com/imikwy/NoVoice-Snake"
   }
 ]
