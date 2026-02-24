@@ -41,6 +41,7 @@
 
 // ── Built-in app imports ─────────────────────────────────────────────────────
 import NotesApp from './notes/index.jsx';
+import RemindersApp from './reminders/index.jsx';
 
 // ── App Registry ─────────────────────────────────────────────────────────────
 
@@ -73,6 +74,20 @@ export const APP_REGISTRY = [
     tags: ['productivity', 'utility'],
     defaultPinned: true,
     component: NotesApp,
+  },
+
+  {
+    id: 'reminders',
+    name: 'Reminders',
+    description: 'Smart reminders with lists, due dates, priorities and stars.',
+    longDescription: 'An Apple-style reminders app. Create smart lists, set due dates, flag priorities, and star important items. Everything saved locally.',
+    icon: '🔔',
+    iconColor: '#FF3B30',
+    version: '1.0.0',
+    author: 'NoVoice',
+    tags: ['productivity', 'utility'],
+    defaultPinned: true,
+    component: RemindersApp,
   },
 
   // ── Add your apps here ───────────────────────────────────────────────────
