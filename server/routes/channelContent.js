@@ -358,6 +358,29 @@ router.post('/announcements/:channelId', authenticateToken, (req, res) => {
   }
 });
 
+router.patch('/announcements/:channelId/:announcementId', authenticateToken, (req, res) => {
+  try {
+    const channel = getChannelForMember(req.params.channelId, req.user.id, res);
+    if (!channel) return;
+    if (!requireOwner(channel.server_id, req.user.id, res)) return;
+    const { content } = req.body;
+    if (!content?.trim()) {
+      return res.status(400).json({ error: 'Content is required' });
+    }
+    const existing = getDb()
+      .prepare('SELECT id FROM announcements WHERE id = ? AND channel_id = ?')
+      .get(req.params.announcementId, channel.id);
+    if (!existing) return res.status(404).json({ error: 'Announcement not found' });
+    getDb()
+      .prepare('UPDATE announcements SET content = ? WHERE id = ?')
+      .run(content.trim(), existing.id);
+    emitChannelUpdated(req, channel.id);
+    res.json({ message: 'Announcement updated' });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.delete('/announcements/:channelId/:announcementId', authenticateToken, (req, res) => {
   try {
     const channel = getChannelForMember(req.params.channelId, req.user.id, res);
@@ -811,6 +834,53 @@ router.delete('/tasks/:channelId/items/:itemId', authenticateToken, (req, res) =
     emitChannelUpdated(req, channel.id);
     res.json({ message: 'Task item deleted' });
   } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── Bulk import (AI) ──────────────────────────────────────────────────────────
+router.post('/tasks/:channelId/import', authenticateToken, (req, res) => {
+  try {
+    const channel = getChannelForMember(req.params.channelId, req.user.id, res);
+    if (!channel) return;
+    if (!requireTaskEditor(channel, req.user.id, res)) return;
+
+    const { categories } = req.body;
+    if (!Array.isArray(categories) || categories.length === 0) {
+      return res.status(400).json({ error: 'categories array is required' });
+    }
+
+    const db = getDb();
+    const maxPos = db
+      .prepare('SELECT MAX(position) as p FROM task_categories WHERE channel_id = ?')
+      .get(channel.id);
+    let catPos = (maxPos?.p ?? -1) + 1;
+
+    const results = [];
+    for (const cat of categories) {
+      const catId = uuidv4();
+      const catName = String(cat.name || 'Tasks').trim().slice(0, 100);
+      db.prepare(
+        'INSERT INTO task_categories (id, channel_id, name, position) VALUES (?, ?, ?, ?)'
+      ).run(catId, channel.id, catName, catPos++);
+
+      let itemPos = 0;
+      for (const task of Array.isArray(cat.tasks) ? cat.tasks : []) {
+        const itemId = uuidv4();
+        const title = String(task.title || '').trim().slice(0, 200);
+        if (!title) continue;
+        const desc = String(task.description || '').trim().slice(0, 500);
+        db.prepare(
+          'INSERT INTO task_items (id, channel_id, category_id, title, description, position, completed, created_by) VALUES (?, ?, ?, ?, ?, ?, 0, ?)'
+        ).run(itemId, channel.id, catId, title, desc, itemPos++, req.user.id);
+      }
+      results.push({ categoryId: catId, taskCount: itemPos });
+    }
+
+    emitChannelUpdated(req, channel.id);
+    res.status(201).json({ imported: results });
+  } catch (err) {
+    console.error('[tasks/import]', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

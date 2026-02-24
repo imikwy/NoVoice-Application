@@ -24,6 +24,7 @@ async function startServer(portOverride) {
   const messageRoutes = require('./routes/messages');
   const channelContentRoutes = require('./routes/channelContent');
   const uploadRoutes = require('./routes/uploads');
+  const aiRoutes = require('./routes/ai');
   const { setupWebSocket } = require('./websocket/handler');
 
   const app = express();
@@ -43,6 +44,7 @@ async function startServer(portOverride) {
   app.use('/api/messages', messageRoutes);
   app.use('/api/channel-content', channelContentRoutes);
   app.use('/api/uploads', uploadRoutes);
+  app.use('/api/ai', aiRoutes);
 
   // Serve uploaded files as static assets
   const uploadsDir = path.join(__dirname, '../uploads');

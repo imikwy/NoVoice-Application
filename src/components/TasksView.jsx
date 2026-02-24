@@ -11,9 +11,11 @@ import {
   UsersRound,
   Shield,
   Loader2,
+  Sparkles,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useSocket } from '../context/SocketContext';
+import TaskImportModal from './TaskImportModal';
 
 function moveArrayItem(list, fromIndex, toIndex) {
   if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return [...list];
@@ -69,6 +71,7 @@ export default function TasksView({ channel, onToggleMembers, showMembers }) {
   const [dragCategoryId, setDragCategoryId] = useState(null);
   const [dragTask, setDragTask] = useState(null); // { id, fromCategoryId }
 
+  const [showImport, setShowImport] = useState(false);
   const [showEditors, setShowEditors] = useState(false);
   const [editorMembers, setEditorMembers] = useState([]);
   const [editorIds, setEditorIds] = useState(new Set());
@@ -421,6 +424,17 @@ export default function TasksView({ channel, onToggleMembers, showMembers }) {
           </button>
         )}
 
+        {canEdit && (
+          <button
+            onClick={() => setShowImport(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-nv-text-secondary hover:text-nv-accent hover:bg-nv-accent/[0.08] transition-all"
+            title="Import tasks with AI"
+          >
+            <Sparkles size={12} />
+            Import
+          </button>
+        )}
+
         {isOwner && (
           <button
             onClick={openEditorsPanel}
@@ -746,6 +760,16 @@ export default function TasksView({ channel, onToggleMembers, showMembers }) {
           })
         )}
       </div>
+
+      <AnimatePresence>
+        {showImport && (
+          <TaskImportModal
+            channelId={channel.id}
+            onClose={() => setShowImport(false)}
+            onImported={loadBoard}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

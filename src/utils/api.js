@@ -268,6 +268,13 @@ class ApiClient {
     });
   }
 
+  async updateAnnouncement(channelId, announcementId, data) {
+    return this.request(`/channel-content/announcements/${channelId}/${announcementId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
   async deleteAnnouncement(channelId, announcementId) {
     return this.request(`/channel-content/announcements/${channelId}/${announcementId}`, { method: 'DELETE' });
   }
@@ -360,6 +367,20 @@ class ApiClient {
 
   async deleteTask(channelId, taskId) {
     return this.deleteTaskItem(channelId, taskId);
+  }
+
+  async importTasksFromAI(type, content, mimeType) {
+    return this.request('/ai/import-tasks', {
+      method: 'POST',
+      body: JSON.stringify({ type, content, mimeType }),
+    });
+  }
+
+  async importTasksBulk(channelId, categories) {
+    return this.request(`/channel-content/tasks/${channelId}/import`, {
+      method: 'POST',
+      body: JSON.stringify({ categories }),
+    });
   }
 
   // ── Forum ──────────────────────────────────────────────────────────────────
