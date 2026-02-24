@@ -5,7 +5,7 @@ const { authenticateToken } = require('../middleware/auth');
 const GEMINI_URL =
   'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
-const SYSTEM_PROMPT = `You are a task extraction assistant. Extract a structured todo list from the provided content.
+const SYSTEM_PROMPT = `You are a task extraction assistant. Extract every actionable task from the provided content.
 
 Return ONLY valid JSON with this exact structure — no explanation, no markdown, no code blocks:
 {
@@ -19,11 +19,22 @@ Return ONLY valid JSON with this exact structure — no explanation, no markdown
   ]
 }
 
-Rules:
-- Group related tasks into logical categories (e.g. "Shopping", "Work", "Home")
-- If no clear grouping exists, use a single category named "Tasks"
+CATEGORY RULES — this is critical:
+- You MUST only use these five category names (exactly as written): "To Do", "In Progress", "Done", "Ideas", "Backlog"
+- "To Do"      → concrete, actionable tasks that need to be done
+- "In Progress" → tasks explicitly mentioned as currently being worked on
+- "Done"       → tasks explicitly mentioned as already completed or finished
+- "Ideas"      → vague suggestions, feature ideas, brainstorming items, or "would be nice" concepts
+- "Backlog"    → lower priority tasks, future considerations, nice-to-haves
+- NEVER invent your own category names
+- NEVER use document headings, section titles, or any structural text from the content as category names
+- Only include a category in the output if it actually has tasks
+- When in doubt, default to "To Do"
+
+TASK RULES:
+- Extract every distinct action item, feature, or todo — do not skip any
 - Keep task titles short and actionable (max ~80 chars)
-- Use description only for genuinely important details, otherwise leave it empty string ""
+- Use description for genuinely important detail only, otherwise use empty string ""
 - Do not add completed/priority/date fields
 - Return only the JSON object, nothing else`;
 
