@@ -5,9 +5,11 @@ import {
   MousePointer2, Pencil, Type, Image as ImageIcon,
   StickyNote, Square, Circle, ArrowRight,
   ChevronLeft, ChevronRight, Download, Upload,
-  Layers, Palette, Type as FontIcon, Move
+  Layers, Palette, Type as FontIcon, Move, Gaps,
+  GripHorizontal, Maximize2, Settings, Grid3X3
 } from 'lucide-react';
 import { nanoid } from 'nanoid';
+import { useDragControls } from 'framer-motion';
 
 const NOTES_KEY = 'nv_whiteboard_notes';
 
@@ -37,6 +39,7 @@ function createNote() {
     id: `wb_${Date.now()}_${nanoid(6)}`,
     title: '',
     elements: [],
+    gridType: 'dots', // dots, lines, none
     pinned: false,
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -65,6 +68,7 @@ export default function WhiteboardApp() {
   const [tool, setTool] = useState('select'); // select, draw, text, sticky, shape, image
   const [color, setColor] = useState('#6366f1');
   const [saveIndicator, setSaveIndicator] = useState(false);
+  const [showGridMenu, setShowGridMenu] = useState(false);
 
   // Canvas State
   const [viewState, setViewState] = useState({ x: 0, y: 0, zoom: 1 });
@@ -145,8 +149,8 @@ export default function WhiteboardApp() {
   const handleMouseDown = (e) => {
     if (!selectedNote) return;
 
-    // Middle click or Space/Alt + Left click for panning
-    if (e.button === 1 || tool === 'select' || e.altKey) {
+    // Middle click or Alt + Left click for panning
+    if (e.button === 1 || e.altKey) {
       setIsPanning(true);
       lastMousePos.current = { x: e.clientX, y: e.clientY };
       return;
@@ -237,7 +241,7 @@ export default function WhiteboardApp() {
 
     const zoomStep = 1.1;
     const factor = e.deltaY < 0 ? zoomStep : 1 / zoomStep;
-    const newZoom = Math.min(Math.max(viewState.zoom * factor, 0.1), 5);
+    const newZoom = Math.min(Math.max(viewState.zoom * factor, 0.05), 10);
 
     // Calculate new offset to keep mouse point fixed
     const dx = (mouseX - viewState.x) * (1 - factor);
@@ -350,6 +354,36 @@ export default function WhiteboardApp() {
                     />
                   )}
                 </AnimatePresence>
+
+                <div className="w-px h-6 bg-white/10 mx-1" />
+
+                <div className="relative">
+                  <button
+                    onClick={() => setShowGridMenu(!showGridMenu)}
+                    className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${showGridMenu ? 'bg-nv-accent text-white' : 'text-nv-text-tertiary hover:bg-white/5 hover:text-nv-text-primary'}`}
+                  >
+                    <Grid3X3 size={16} />
+                  </button>
+                  {showGridMenu && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setShowGridMenu(false)} />
+                      <div className="absolute top-full right-0 mt-2 w-32 bg-[#1e1e1e] border border-white/10 rounded-xl shadow-2xl py-1 z-50 overflow-hidden">
+                        {['none', 'dots', 'lines'].map(type => (
+                          <button
+                            key={type}
+                            onClick={() => {
+                              updateNote(selectedId, { gridType: type });
+                              setShowGridMenu(false);
+                            }}
+                            className={`w-full text-left px-3 py-2 text-xs capitalize hover:bg-white/5 transition-colors ${(selectedNote.gridType || 'dots') === type ? 'text-nv-accent font-semibold' : 'text-nv-text-tertiary'}`}
+                          >
+                            {type}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -368,12 +402,15 @@ export default function WhiteboardApp() {
                 className="w-full h-full"
                 style={{
                   backgroundColor: '#121212',
-                  backgroundImage: `radial-gradient(circle, #222 1px, transparent 1px)`,
-                  backgroundSize: '30px 30px',
+                  backgroundImage: (selectedNote.gridType || 'dots') === 'none' ? 'none' :
+                    (selectedNote.gridType || 'dots') === 'lines'
+                      ? `linear-gradient(#222 1px, transparent 1px), linear-gradient(90deg, #222 1px, transparent 1px)`
+                      : `radial-gradient(circle, #333 1px, transparent 1px)`,
+                  backgroundSize: `${30 * viewState.zoom}px ${30 * viewState.zoom}px`,
                   backgroundPosition: `${viewState.x}px ${viewState.y}px`
                 }}
               >
-                <g transform={`translate(${viewState.x}, ${viewState.y}) scale(${viewState.zoom})`}>
+                <g transform={`translate(${viewState.x}, ${viewState.y}) scale(${viewState.zoom})`} style={{ transformOrigin: '0 0' }}>
                   {/* Render Drawing Paths */}
                   {selectedNote.elements.filter(el => el.type === 'draw').map(path => (
                     <polyline
@@ -403,107 +440,24 @@ export default function WhiteboardApp() {
 
               {/* Render HTML elements (Text, Sticky, Shapes) */}
               <div
-                className="absolute inset-0 pointer-events-none overflow-hidden"
-                style={{ transform: `translate(${viewState.x}px, ${viewState.y}px) scale(${viewState.zoom})` }}
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  transform: `translate(${viewState.x}px, ${viewState.y}px) scale(${viewState.zoom})`,
+                  transformOrigin: '0 0'
+                }}
               >
                 {selectedNote.elements.map(el => {
                   if (el.type === 'draw') return null;
 
                   return (
-                    <motion.div
-                      drag
-                      dragMomentum={false}
-                      onDragEnd={(_, info) => {
-                        updateElement(el.id, {
-                          x: el.x + info.offset.x / viewState.zoom,
-                          y: el.y + info.offset.y / viewState.zoom
-                        });
-                      }}
-                      initial={false}
-                      className="absolute pointer-events-auto"
-                      style={{
-                        left: el.x,
-                        top: el.y,
-                        width: el.width,
-                        height: el.height,
-                        zIndex: tool === 'select' ? 50 : 1
-                      }}
-                    >
-                      {el.type === 'sticky' && (
-                        <div
-                          className="w-full h-full p-4 shadow-xl border-t-4 rotate-1"
-                          style={{
-                            backgroundColor: el.color,
-                            borderColor: 'rgba(0,0,0,0.1)',
-                            color: '#1a1a1a',
-                            borderRadius: '2px'
-                          }}
-                        >
-                          <textarea
-                            value={el.content}
-                            onChange={(e) => updateElement(el.id, { content: e.target.value })}
-                            className="w-full h-full bg-transparent border-none outline-none resize-none font-medium leading-tight text-sm placeholder:text-black/20"
-                          />
-                          <button
-                            onClick={() => removeElement(el.id)}
-                            className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-nv-danger text-white flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
-                          >
-                            <Plus className="rotate-45" size={14} />
-                          </button>
-                        </div>
-                      )}
-
-                      {el.type === 'text' && (
-                        <div className="relative group min-w-[50px]">
-                          <textarea
-                            value={el.content}
-                            onChange={(e) => updateElement(el.id, { content: e.target.value })}
-                            className="w-full bg-transparent border-none outline-none resize-none text-nv-text-primary px-2 py-1 placeholder:text-white/20"
-                            style={{ color: el.color, fontStyle: 'Inter' }}
-                          />
-                          <button
-                            onClick={() => removeElement(el.id)}
-                            className="absolute -top-6 left-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                          >
-                            <Trash2 size={14} className="text-nv-danger" />
-                          </button>
-                        </div>
-                      )}
-
-                      {el.type === 'image' && (
-                        <div className="w-full h-full relative group shadow-lg rounded-lg overflow-hidden border border-white/10 bg-white/5">
-                          <img
-                            src={el.content}
-                            alt="Board Element"
-                            className="w-full h-full object-contain pointer-events-none"
-                            onError={(e) => { e.target.src = 'https://via.placeholder.com/300x200?text=Invalid+URL'; }}
-                          />
-                          <button
-                            onClick={() => removeElement(el.id)}
-                            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-nv-danger rounded-full p-1.5 shadow-xl"
-                          >
-                            <Plus className="rotate-45 text-white" size={14} />
-                          </button>
-                        </div>
-                      )}
-
-                      {el.type === 'shape' && (
-                        <div
-                          className="w-full h-full relative group"
-                          style={{
-                            border: `2px solid ${el.color}`,
-                            borderRadius: el.shape === 'circle' ? '50%' : '8px'
-                          }}
-                        >
-                          <button
-                            onClick={() => removeElement(el.id)}
-                            className="absolute -top-8 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-nv-danger rounded-full p-1"
-                          >
-                            <Plus className="rotate-45 text-white" size={12} />
-                          </button>
-                        </div>
-                      )}
-                    </motion.div>
+                    <BoardElement
+                      key={el.id}
+                      el={el}
+                      viewState={viewState}
+                      tool={tool}
+                      updateElement={updateElement}
+                      removeElement={removeElement}
+                    />
                   );
                 })}
               </div>
@@ -531,6 +485,21 @@ export default function WhiteboardApp() {
                     />
                   ))}
                 </div>
+
+                <div className="w-px h-8 bg-white/10 mx-1" />
+
+                <div className="flex items-center gap-2 px-2">
+                  <span className="text-[10px] text-nv-text-tertiary tabular-nums w-8 text-center font-medium">
+                    {Math.round(viewState.zoom * 100)}%
+                  </span>
+                  <button
+                    onClick={() => setViewState({ x: 0, y: 0, zoom: 1 })}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center text-nv-text-tertiary hover:bg-white/5 hover:text-nv-text-primary transition-all"
+                    title="Reset View"
+                  >
+                    <Move size={14} />
+                  </button>
+                </div>
               </div>
             </div>
           </>
@@ -554,6 +523,175 @@ export default function WhiteboardApp() {
         )}
       </div>
     </div>
+  );
+}
+
+function BoardElement({ el, viewState, tool, updateElement, removeElement }) {
+  const dragControls = useDragControls();
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    if (el.type === 'text' && textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
+    }
+  }, [el.content, el.type]);
+
+  const handleResize = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startWidth = el.width || 100;
+    const startHeight = el.height || 100;
+
+    const onMouseMove = (moveE) => {
+      const dx = (moveE.clientX - startX) / viewState.zoom;
+      const dy = (moveE.clientY - startY) / viewState.zoom;
+      updateElement(el.id, {
+        width: Math.max(50, startWidth + dx),
+        height: Math.max(20, startHeight + dy)
+      });
+    };
+
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  return (
+    <motion.div
+      layout
+      drag
+      dragControls={dragControls}
+      dragListener={false}
+      dragMomentum={false}
+      dragElastic={0}
+      onDragEnd={(_, info) => {
+        // Reset the motion transform to prevent "doubling up" or "jumping" after state update
+        updateElement(el.id, {
+          x: el.x + info.offset.x / viewState.zoom,
+          y: el.y + info.offset.y / viewState.zoom
+        });
+      }}
+      initial={false}
+      className={`absolute pointer-events-auto group ${tool === 'select' ? 'hover:ring-1 ring-nv-accent ring-offset-2 ring-offset-transparent' : ''}`}
+      style={{
+        left: el.x,
+        top: el.y,
+        width: el.width,
+        height: el.height,
+        zIndex: tool === 'select' ? 50 : 1,
+        touchAction: 'none'
+      }}
+    >
+      {/* Drag Handle */}
+      <div
+        onPointerDown={(e) => dragControls.start(e)}
+        className="absolute -top-6 left-1/2 -translate-x-1/2 cursor-grab active:cursor-grabbing p-1 bg-[#1e1e1e] border border-white/10 rounded-t-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+      >
+        <GripHorizontal size={14} className="text-nv-text-tertiary" />
+      </div>
+
+      {el.type === 'sticky' && (
+        <div
+          className="w-full h-full p-4 shadow-xl border-t-4 rotate-1 relative"
+          style={{
+            backgroundColor: el.color,
+            borderColor: 'rgba(0,0,0,0.1)',
+            color: '#1a1a1a',
+            borderRadius: '2px'
+          }}
+        >
+          <textarea
+            autoFocus
+            value={el.content}
+            onFocus={(e) => e.target.select()}
+            onChange={(e) => updateElement(el.id, { content: e.target.value })}
+            className="w-full h-full bg-transparent border-none outline-none resize-none font-medium leading-tight text-sm placeholder:text-black/20"
+          />
+          <button
+            onClick={() => removeElement(el.id)}
+            className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/10 text-black flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <Plus className="rotate-45" size={12} />
+          </button>
+        </div>
+      )}
+
+      {el.type === 'text' && (
+        <div className="relative group min-w-[50px] w-full">
+          <textarea
+            ref={textareaRef}
+            autoFocus
+            value={el.content}
+            onFocus={(e) => e.target.select()}
+            onChange={(e) => updateElement(el.id, { content: e.target.value })}
+            className="w-full bg-transparent border-none outline-none resize-none text-nv-text-primary px-2 py-1 placeholder:text-white/20 min-h-[1.5em] overflow-hidden"
+            style={{
+              color: el.color,
+              fontFamily: 'Inter',
+              width: el.width ? `${el.width}px` : 'auto'
+            }}
+          />
+          <button
+            onClick={() => removeElement(el.id)}
+            className="absolute -top-6 right-0 opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <Trash2 size={12} className="text-nv-danger" />
+          </button>
+        </div>
+      )}
+
+      {el.type === 'image' && (
+        <div className="w-full h-full relative group shadow-lg rounded-lg overflow-hidden border border-white/10 bg-white/5">
+          <img
+            src={el.content}
+            alt="Board Element"
+            className="w-full h-full object-contain pointer-events-none"
+            onError={(e) => { e.target.src = 'https://via.placeholder.com/300x200?text=Invalid+URL'; }}
+          />
+          <button
+            onClick={() => removeElement(el.id)}
+            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-nv-danger rounded-full p-1.5 shadow-xl"
+          >
+            <Plus className="rotate-45 text-white" size={14} />
+          </button>
+        </div>
+      )}
+
+      {el.type === 'shape' && (
+        <div
+          className="w-full h-full relative group"
+          style={{
+            border: `2px solid ${el.color}`,
+            borderRadius: el.shape === 'circle' ? '50%' : '8px'
+          }}
+        >
+          <button
+            onClick={() => removeElement(el.id)}
+            className="absolute -top-8 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-nv-danger rounded-full p-1"
+          >
+            <Plus className="rotate-45 text-white" size={12} />
+          </button>
+        </div>
+      )}
+
+      {/* Resize Handle */}
+      {tool === 'select' && el.type !== 'draw' && (
+        <div
+          onMouseDown={handleResize}
+          className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center bg-nv-accent rounded-tl-md"
+        >
+          <Maximize2 size={8} className="text-white" />
+        </div>
+      )}
+    </motion.div>
   );
 }
 
