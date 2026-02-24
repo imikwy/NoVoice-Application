@@ -19,6 +19,7 @@ import {
   MessagesSquare,
   ChevronDown,
   Check,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
@@ -107,11 +108,24 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
     inputGain,
     outputVolume,
     userVolumes,
+    audioProcessing,
+    voiceQualityMode,
+    fecMode,
+    lowLatencyMode,
+    prioritizeVoicePackets,
+    effectiveFecEnabled,
+    targetAudioBitrate,
+    voiceNetworkStats,
     setInputDevice,
     setOutputDevice,
     setInputGain,
     setOutputVolume,
     setUserVolume,
+    setAudioProcessingOption,
+    setVoiceQualityMode,
+    setFecMode,
+    setLowLatencyMode,
+    setPrioritizeVoicePackets,
   } = useVoice();
 
   const [messages, setMessages] = useState([]);
@@ -119,6 +133,7 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
   const [typingUsers, setTypingUsers] = useState([]);
   const [showMicMenu, setShowMicMenu] = useState(false);
   const [showOutputMenu, setShowOutputMenu] = useState(false);
+  const [showFxMenu, setShowFxMenu] = useState(false);
   const [showMicDeviceList, setShowMicDeviceList] = useState(false);
   const [showOutputDeviceList, setShowOutputDeviceList] = useState(false);
 
@@ -264,19 +279,20 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
   }, [leaveVoice, socket, activeChannel?.id]);
 
   useEffect(() => {
-    if (!showMicMenu && !showOutputMenu) return;
+    if (!showMicMenu && !showOutputMenu && !showFxMenu) return;
     const handler = (event) => {
       if (!voiceControlsRef.current) return;
       if (!voiceControlsRef.current.contains(event.target)) {
         setShowMicMenu(false);
         setShowOutputMenu(false);
+        setShowFxMenu(false);
         setShowMicDeviceList(false);
         setShowOutputDeviceList(false);
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [showMicMenu, showOutputMenu]);
+  }, [showMicMenu, showOutputMenu, showFxMenu]);
 
   useEffect(() => {
     if (!showMicMenu) setShowMicDeviceList(false);
@@ -323,6 +339,65 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
     const participantIds = new Set(voiceParticipants.map((p) => p.id));
     const selectedInputDevice = inputDevices.find((device) => device.id === selectedInputDeviceId) || inputDevices[0];
     const selectedOutputDevice = outputDevices.find((device) => device.id === selectedOutputDeviceId) || outputDevices[0];
+    const audioFxOptions = [
+      {
+        key: 'echoCancellation',
+        label: 'Echo Cancellation',
+        description: 'Reduce speaker feedback loops',
+      },
+      {
+        key: 'noiseSuppression',
+        label: 'Noise Suppression',
+        description: 'Filter constant background noise',
+      },
+      {
+        key: 'autoGainControl',
+        label: 'Auto Gain Control',
+        description: 'Stabilize voice loudness automatically',
+      },
+      {
+        key: 'highpassFilter',
+        label: 'Highpass Filter',
+        description: 'Remove low-end rumble and hum',
+      },
+    ];
+    const qualityOptions = [
+      { key: 'auto', label: 'Auto', subLabel: 'Adaptive' },
+      { key: 'high', label: 'High', subLabel: 'Stable HQ' },
+      { key: 'extreme', label: 'Extreme', subLabel: 'Max bandwidth' },
+    ];
+    const fecOptions = [
+      { key: 'auto', label: 'Auto' },
+      { key: 'on', label: 'On' },
+      { key: 'off', label: 'Off' },
+    ];
+    const enabledFxCount = audioFxOptions.reduce(
+      (count, option) => count + (audioProcessing?.[option.key] ? 1 : 0),
+      0
+    );
+    const activeQualityLabel = qualityOptions.find((option) => option.key === voiceQualityMode)?.label || 'Auto';
+    const activeBitrateKbps = Math.round(Math.max(64, Number(targetAudioBitrate || 192000)) / 1000);
+    const hasRemoteVoicePeers = voiceParticipants.some((participant) => participant.id !== user?.id);
+    const liveBitrateText = Number.isFinite(voiceNetworkStats?.measuredBitrateKbps)
+      ? `Live ${voiceNetworkStats.measuredBitrateKbps} kbps`
+      : hasRemoteVoicePeers
+        ? 'Live ...'
+        : 'Live --';
+    const lossText = Number.isFinite(voiceNetworkStats?.packetLossPercent)
+      ? `${voiceNetworkStats.packetLossPercent}%`
+      : hasRemoteVoicePeers
+        ? '...'
+        : '--';
+    const jitterText = Number.isFinite(voiceNetworkStats?.jitterMs)
+      ? `${voiceNetworkStats.jitterMs} ms`
+      : hasRemoteVoicePeers
+        ? '...'
+        : '--';
+    const rttText = Number.isFinite(voiceNetworkStats?.rttMs)
+      ? `${voiceNetworkStats.rttMs} ms`
+      : hasRemoteVoicePeers
+        ? '...'
+        : '--';
 
     return (
       <div className="flex-1 flex flex-col bg-nv-content min-w-0">
@@ -362,7 +437,7 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
               <span>{voiceParticipants.length} in voice</span>
             </div>
             <span className="text-[11px] px-2 py-1 rounded-md border border-nv-accent/30 bg-nv-accent/10 text-nv-accent font-medium">
-              HQ Opus 192 kbps
+              {`Opus ${activeQualityLabel} ${activeBitrateKbps} kbps · FEC ${effectiveFecEnabled ? 'On' : 'Off'}`}
             </span>
             <div className="ml-auto flex items-center gap-2" ref={voiceControlsRef}>
               {isInThisVoiceChannel && (
@@ -371,7 +446,7 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
                     <div className="flex items-center rounded-xl overflow-hidden">
                       <button
                         onClick={toggleSelfMute}
-                        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs transition-all ${
+                        className={`h-8 inline-flex items-center gap-1.5 px-2.5 text-xs transition-all ${
                           selfMuted
                             ? 'text-nv-warning bg-nv-warning/10'
                             : 'text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.06]'
@@ -384,9 +459,10 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
                       <button
                         onClick={() => {
                           setShowOutputMenu(false);
+                          setShowFxMenu(false);
                           setShowMicMenu((prev) => !prev);
                         }}
-                        className={`px-1.5 py-1.5 text-xs transition-all rounded-r-xl ${
+                        className={`h-8 w-8 inline-flex items-center justify-center text-xs transition-all ${
                           showMicMenu
                             ? 'text-nv-text-primary bg-white/[0.08]'
                             : 'text-nv-text-tertiary hover:text-nv-text-primary hover:bg-white/[0.06]'
@@ -489,7 +565,7 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
                     <div className="flex items-center rounded-xl overflow-hidden">
                       <button
                         onClick={toggleDeafen}
-                        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs transition-all ${
+                        className={`h-8 inline-flex items-center gap-1.5 px-2.5 text-xs transition-all ${
                           deafened
                             ? 'text-nv-warning bg-nv-warning/10'
                             : 'text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.06]'
@@ -502,9 +578,10 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
                       <button
                         onClick={() => {
                           setShowMicMenu(false);
+                          setShowFxMenu(false);
                           setShowOutputMenu((prev) => !prev);
                         }}
-                        className={`px-1.5 py-1.5 text-xs transition-all rounded-r-xl ${
+                        className={`h-8 w-8 inline-flex items-center justify-center text-xs transition-all ${
                           showOutputMenu
                             ? 'text-nv-text-primary bg-white/[0.08]'
                             : 'text-nv-text-tertiary hover:text-nv-text-primary hover:bg-white/[0.06]'
@@ -595,6 +672,216 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
                               onChange={(e) => setOutputVolume(Number(e.target.value))}
                               className="w-full accent-[#34C759]"
                             />
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  <div className="w-px h-3.5 bg-white/[0.1] mx-0.5" />
+
+                  <div className="relative">
+                    <div className="flex items-center rounded-xl overflow-hidden">
+                      <button
+                        onClick={() => {
+                          setShowMicMenu(false);
+                          setShowOutputMenu(false);
+                          setShowMicDeviceList(false);
+                          setShowOutputDeviceList(false);
+                          setShowFxMenu((prev) => !prev);
+                        }}
+                        className={`h-8 w-8 inline-flex items-center justify-center transition-all ${
+                          enabledFxCount > 0
+                            ? 'text-nv-accent bg-nv-accent/10'
+                            : 'text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.06]'
+                        }`}
+                        title="Audio FX settings"
+                      >
+                        <SlidersHorizontal size={13} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowMicMenu(false);
+                          setShowOutputMenu(false);
+                          setShowMicDeviceList(false);
+                          setShowOutputDeviceList(false);
+                          setShowFxMenu((prev) => !prev);
+                        }}
+                        className={`h-8 w-8 inline-flex items-center justify-center text-xs transition-all ${
+                          showFxMenu
+                            ? 'text-nv-text-primary bg-white/[0.08]'
+                            : 'text-nv-text-tertiary hover:text-nv-text-primary hover:bg-white/[0.06]'
+                        }`}
+                        title="Audio FX menu"
+                      >
+                        <ChevronDown size={9} className={`transition-transform ${showFxMenu ? 'rotate-180' : ''}`} />
+                      </button>
+                    </div>
+
+                    <AnimatePresence>
+                      {showFxMenu && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 6, scale: 0.98 }}
+                          className="absolute right-0 mt-2 w-72 rounded-2xl border border-white/[0.08] bg-nv-channels/95 backdrop-blur-xl shadow-[0_20px_45px_rgba(0,0,0,0.45)] z-40 p-3"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-[10px] text-nv-text-tertiary uppercase tracking-wide">Audio FX</p>
+                            <span className="text-[10px] text-nv-text-tertiary">{enabledFxCount}/4 active</span>
+                          </div>
+
+                          <div className="mb-2.5 rounded-xl border border-white/[0.08] bg-white/[0.02] p-2">
+                            <p className="text-[10px] text-nv-text-tertiary uppercase tracking-wide mb-1.5">Voice Quality</p>
+                            <div className="grid grid-cols-3 gap-1">
+                              {qualityOptions.map((option) => {
+                                const selected = voiceQualityMode === option.key;
+                                return (
+                                  <button
+                                    key={option.key}
+                                    onClick={() => setVoiceQualityMode(option.key)}
+                                    className={`rounded-lg px-2 py-1.5 border transition-all ${
+                                      selected
+                                        ? 'border-nv-accent/45 bg-nv-accent/12 text-nv-accent'
+                                        : 'border-white/[0.08] bg-white/[0.01] text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.05]'
+                                    }`}
+                                    title={option.label}
+                                  >
+                                    <p className="text-[11px] font-medium leading-none">{option.label}</p>
+                                    <p className="text-[9px] mt-0.5 opacity-80 leading-none">{option.subLabel}</p>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="mt-2 text-[10px] text-nv-text-tertiary flex items-center justify-between gap-2">
+                              <span>{`Target ${activeBitrateKbps} kbps`}</span>
+                              <span>{liveBitrateText}</span>
+                            </div>
+                            <div className="mt-1 text-[10px] text-nv-text-tertiary flex items-center justify-between gap-2">
+                              <span>{`Loss ${lossText}`}</span>
+                              <span>{`Jitter ${jitterText}`}</span>
+                              <span>{`RTT ${rttText}`}</span>
+                            </div>
+                          </div>
+
+                          <div className="mb-2.5 rounded-xl border border-white/[0.08] bg-white/[0.02] p-2">
+                            <p className="text-[10px] text-nv-text-tertiary uppercase tracking-wide mb-1.5">Transport</p>
+
+                            <div className="mb-2">
+                              <p className="text-[10px] text-nv-text-tertiary uppercase tracking-wide mb-1">Forward Error Correction</p>
+                              <div className="grid grid-cols-3 gap-1">
+                                {fecOptions.map((option) => {
+                                  const selected = fecMode === option.key;
+                                  return (
+                                    <button
+                                      key={option.key}
+                                      onClick={() => setFecMode(option.key)}
+                                      className={`rounded-lg px-2 py-1.5 border transition-all ${
+                                        selected
+                                          ? 'border-nv-accent/45 bg-nv-accent/12 text-nv-accent'
+                                          : 'border-white/[0.08] bg-white/[0.01] text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.05]'
+                                      }`}
+                                      title={`FEC ${option.label}`}
+                                    >
+                                      <p className="text-[11px] font-medium leading-none">{option.label}</p>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <p className="mt-1 text-[10px] text-nv-text-tertiary">
+                                {`Effective: ${effectiveFecEnabled ? 'On' : 'Off'}`}
+                              </p>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <button
+                                onClick={() => setLowLatencyMode(!lowLatencyMode)}
+                                className={`w-full text-left rounded-xl border px-2.5 py-2 transition-all ${
+                                  lowLatencyMode
+                                    ? 'border-nv-accent/35 bg-nv-accent/[0.08]'
+                                    : 'border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05]'
+                                }`}
+                                title="Low latency voice mode"
+                              >
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className={`text-xs font-medium truncate ${lowLatencyMode ? 'text-nv-accent' : 'text-nv-text-primary'}`}>
+                                      Low Latency Stream
+                                    </p>
+                                    <p className="text-[10px] text-nv-text-tertiary truncate">
+                                      Smaller packetization for faster voice delivery
+                                    </p>
+                                  </div>
+                                  <span className={`relative w-9 h-5 rounded-full transition-all ${lowLatencyMode ? 'bg-nv-accent/70' : 'bg-white/[0.12]'}`}>
+                                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${lowLatencyMode ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                  </span>
+                                </div>
+                              </button>
+
+                              <button
+                                onClick={() => setPrioritizeVoicePackets(!prioritizeVoicePackets)}
+                                className={`w-full text-left rounded-xl border px-2.5 py-2 transition-all ${
+                                  prioritizeVoicePackets
+                                    ? 'border-nv-accent/35 bg-nv-accent/[0.08]'
+                                    : 'border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05]'
+                                }`}
+                                title="Prioritize voice packets"
+                              >
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className={`text-xs font-medium truncate ${prioritizeVoicePackets ? 'text-nv-accent' : 'text-nv-text-primary'}`}>
+                                      Prioritize Voice Packets
+                                    </p>
+                                    <p className="text-[10px] text-nv-text-tertiary truncate">
+                                      Request high send priority in WebRTC transport
+                                    </p>
+                                  </div>
+                                  <span className={`relative w-9 h-5 rounded-full transition-all ${prioritizeVoicePackets ? 'bg-nv-accent/70' : 'bg-white/[0.12]'}`}>
+                                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${prioritizeVoicePackets ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                  </span>
+                                </div>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            {audioFxOptions.map((option) => {
+                              const enabled = Boolean(audioProcessing?.[option.key]);
+                              return (
+                                <button
+                                  key={option.key}
+                                  onClick={() => setAudioProcessingOption(option.key, !enabled)}
+                                  className={`w-full text-left rounded-xl border px-2.5 py-2 transition-all ${
+                                    enabled
+                                      ? 'border-nv-accent/35 bg-nv-accent/[0.08]'
+                                      : 'border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05]'
+                                  }`}
+                                  title={option.label}
+                                >
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <p className={`text-xs font-medium truncate ${enabled ? 'text-nv-accent' : 'text-nv-text-primary'}`}>
+                                        {option.label}
+                                      </p>
+                                      <p className="text-[10px] text-nv-text-tertiary truncate">
+                                        {option.description}
+                                      </p>
+                                    </div>
+                                    <span
+                                      className={`relative w-9 h-5 rounded-full transition-all ${
+                                        enabled ? 'bg-nv-accent/70' : 'bg-white/[0.12]'
+                                      }`}
+                                    >
+                                      <span
+                                        className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                                          enabled ? 'translate-x-4' : 'translate-x-0.5'
+                                        }`}
+                                      />
+                                    </span>
+                                  </div>
+                                </button>
+                              );
+                            })}
                           </div>
                         </motion.div>
                       )}

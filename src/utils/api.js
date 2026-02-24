@@ -207,6 +207,10 @@ class ApiClient {
     });
   }
 
+  async getVoiceIceConfig() {
+    return this.request('/voice/ice');
+  }
+
   // ── Rules (block-based) ───────────────────────────────────────────────────
 
   async getRuleBlocks(channelId) {
