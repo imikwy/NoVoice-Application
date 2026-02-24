@@ -29,5 +29,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
 
+  // Community extension management (download, load, remove from userData)
+  extensions: {
+    list: () => ipcRenderer.invoke('extensions:list'),
+    install: (data) => ipcRenderer.invoke('extensions:install', data),
+    uninstall: (data) => ipcRenderer.invoke('extensions:uninstall', data),
+    readBundle: (data) => ipcRenderer.invoke('extensions:readBundle', data),
+  },
+
   isElectron: true,
 });

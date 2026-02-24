@@ -9,6 +9,8 @@ import {
   Plus,
   LogOut,
   LogIn,
+  LayoutGrid,
+  Store,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
@@ -31,8 +33,11 @@ export default function Sidebar({
     setActiveChannel,
     onlineUsers,
     pendingRequests,
+    pinnedApps,
+    installedExtensions,
   } = useApp();
 
+  const [appsOpen, setAppsOpen] = useState(true);
   const [friendsOpen, setFriendsOpen] = useState(true);
   const [serversOpen, setServersOpen] = useState(true);
 
@@ -73,6 +78,128 @@ export default function Sidebar({
 
       {/* Scrollable list */}
       <div className="flex-1 overflow-y-auto px-2 space-y-1">
+        {/* Apps Section */}
+        <div>
+          <button
+            onClick={() => setAppsOpen(!appsOpen)}
+            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.04] transition-all duration-150 group"
+          >
+            <motion.div animate={{ rotate: appsOpen ? 0 : -90 }} transition={{ duration: 0.15 }}>
+              <ChevronDown size={14} className="text-nv-text-tertiary" />
+            </motion.div>
+            <LayoutGrid size={15} />
+            {!collapsed && (
+              <>
+                <span className="text-xs font-semibold uppercase tracking-wider flex-1 text-left">
+                  Apps
+                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveView({ type: 'appstore' });
+                    setActiveChannel(null);
+                  }}
+                  className="w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-white/10 transition-all"
+                  title="Browse App Store"
+                >
+                  <Store size={11} />
+                </button>
+              </>
+            )}
+          </button>
+
+          <AnimatePresence>
+            {appsOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                {/* App Store entry */}
+                <button
+                  onClick={() => {
+                    setActiveView({ type: 'appstore' });
+                    setActiveChannel(null);
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg transition-all duration-150 ${
+                    activeView?.type === 'appstore'
+                      ? 'bg-white/[0.08] text-nv-text-primary'
+                      : 'text-nv-text-secondary hover:bg-white/[0.04] hover:text-nv-text-primary'
+                  }`}
+                >
+                  <div className="w-8 h-8 rounded-xl bg-nv-accent/10 flex items-center justify-center shrink-0">
+                    <Store size={14} className="text-nv-accent" />
+                  </div>
+                  {!collapsed && <span className="text-sm truncate">App Store</span>}
+                </button>
+
+                {/* Pinned apps */}
+                {pinnedApps.map((app) => (
+                  <button
+                    key={app.id}
+                    onClick={() => {
+                      setActiveView({ type: 'app', id: app.id });
+                      setActiveChannel(null);
+                    }}
+                    className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg transition-all duration-150 ${
+                      activeView?.type === 'app' && activeView?.id === app.id
+                        ? 'bg-white/[0.08] text-nv-text-primary'
+                        : 'text-nv-text-secondary hover:bg-white/[0.04] hover:text-nv-text-primary'
+                    }`}
+                  >
+                    <div
+                      className="w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0 border border-white/[0.05]"
+                      style={{
+                        backgroundColor: app.iconColor ? `${app.iconColor}20` : 'rgba(255,255,255,0.05)',
+                      }}
+                    >
+                      {app.icon}
+                    </div>
+                    {!collapsed && <span className="text-sm truncate">{app.name}</span>}
+                  </button>
+                ))}
+
+                {/* Installed community extensions */}
+                {installedExtensions.map((ext) => (
+                  <button
+                    key={ext.id}
+                    onClick={() => {
+                      setActiveView({ type: 'app', id: ext.id });
+                      setActiveChannel(null);
+                    }}
+                    className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg transition-all duration-150 ${
+                      activeView?.type === 'app' && activeView?.id === ext.id
+                        ? 'bg-white/[0.08] text-nv-text-primary'
+                        : 'text-nv-text-secondary hover:bg-white/[0.04] hover:text-nv-text-primary'
+                    }`}
+                  >
+                    <div
+                      className="w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0 border border-white/[0.05]"
+                      style={{
+                        backgroundColor: ext.iconColor ? `${ext.iconColor}20` : 'rgba(255,255,255,0.05)',
+                      }}
+                    >
+                      {ext.icon}
+                    </div>
+                    {!collapsed && <span className="text-sm truncate">{ext.name}</span>}
+                  </button>
+                ))}
+
+                {pinnedApps.length === 0 && installedExtensions.length === 0 && !collapsed && (
+                  <p className="text-xs text-nv-text-tertiary px-3 py-2">
+                    No apps pinned yet
+                  </p>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Spacer */}
+        <div className="h-1" />
+
         {/* Friends Section */}
         <div>
           <button

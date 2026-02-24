@@ -3,6 +3,24 @@ import { io } from 'socket.io-client';
 import api, { getApiForServer } from '../utils/api';
 import { useAuth } from './AuthContext';
 import { useSocket } from './SocketContext';
+import { getDefaultPinnedIds, getAppById, APP_REGISTRY } from '../apps/registry';
+import { loadExtensionComponent } from '../utils/extensionLoader';
+
+const PINNED_APPS_KEY = 'nv_pinned_apps';
+
+function loadPinnedAppIds() {
+  try {
+    const raw = localStorage.getItem(PINNED_APPS_KEY);
+    const defaults = getDefaultPinnedIds();
+    if (!raw) return defaults;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return defaults;
+    // Always include defaultPinned apps; merge with user's saved list
+    return [...new Set([...defaults, ...parsed.filter((id) => typeof id === 'string')])];
+  } catch {
+    return getDefaultPinnedIds();
+  }
+}
 
 const AppContext = createContext(null);
 
@@ -28,6 +46,14 @@ export function AppProvider({ children }) {
   // In-memory DM store — relay-only, never persisted to disk
   const [dmMessages, setDmMessages] = useState({}); // friendId -> Message[]
 
+  // App Store — pinned app ids (built-in apps)
+  const [pinnedAppIds, setPinnedAppIds] = useState(() => loadPinnedAppIds());
+
+  // Community extensions — installed on disk (manifests loaded via IPC)
+  const [installedExtensions, setInstalledExtensions] = useState([]);
+  // In-memory component cache: Map<id, React.ComponentType>
+  const extensionComponentCache = useRef(new Map());
+
   // Load initial data when user logs in
   useEffect(() => {
     if (!user) return;
@@ -35,6 +61,14 @@ export function AppProvider({ children }) {
     api.getPendingRequests().then((d) => setPendingRequests(d)).catch(console.error);
     api.getServers().then((d) => setServers(d.servers)).catch(console.error);
   }, [user]);
+
+  // Load installed extensions from disk on startup (Electron only)
+  useEffect(() => {
+    if (!window.electronAPI?.extensions) return;
+    window.electronAPI.extensions.list().then((manifests) => {
+      setInstalledExtensions(Array.isArray(manifests) ? manifests : []);
+    }).catch(() => {});
+  }, []);
 
   // Tear down own-server socket when user logs out
   useEffect(() => {
@@ -254,6 +288,73 @@ export function AppProvider({ children }) {
     });
   }, []);
 
+  const pinApp = useCallback((id) => {
+    if (!getAppById(id)) return;
+    setPinnedAppIds((prev) => {
+      if (prev.includes(id)) return prev;
+      const next = [...prev, id];
+      localStorage.setItem(PINNED_APPS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const unpinApp = useCallback((id) => {
+    setPinnedAppIds((prev) => {
+      const next = prev.filter((i) => i !== id);
+      localStorage.setItem(PINNED_APPS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const isPinnedApp = useCallback((id) => pinnedAppIds.includes(id), [pinnedAppIds]);
+
+  // Pinned apps in registry order
+  const pinnedApps = APP_REGISTRY.filter((app) => pinnedAppIds.includes(app.id));
+
+  // ── Community Extensions ───────────────────────────────────────────────────
+
+  const isInstalledExtension = useCallback(
+    (id) => installedExtensions.some((e) => e.id === id),
+    [installedExtensions]
+  );
+
+  const installExtension = useCallback(async (manifest) => {
+    if (!window.electronAPI?.extensions) return;
+    await window.electronAPI.extensions.install({
+      id: manifest.id,
+      manifest,
+      bundleUrl: manifest.bundleUrl,
+    });
+    setInstalledExtensions((prev) => {
+      if (prev.some((e) => e.id === manifest.id)) return prev;
+      return [...prev, manifest];
+    });
+  }, []);
+
+  const uninstallExtension = useCallback(async (id) => {
+    if (!window.electronAPI?.extensions) return;
+    await window.electronAPI.extensions.uninstall({ id });
+    extensionComponentCache.current.delete(id);
+    setInstalledExtensions((prev) => prev.filter((e) => e.id !== id));
+    // If the user is currently viewing this extension, navigate away
+    setActiveView((prev) => (prev?.type === 'app' && prev.id === id ? null : prev));
+  }, []);
+
+  const getExtensionById = useCallback(
+    (id) => installedExtensions.find((e) => e.id === id) ?? null,
+    [installedExtensions]
+  );
+
+  // Load (and cache) an extension's React component
+  const getOrLoadExtensionComponent = useCallback(async (id) => {
+    if (extensionComponentCache.current.has(id)) {
+      return extensionComponentCache.current.get(id);
+    }
+    const component = await loadExtensionComponent(id);
+    extensionComponentCache.current.set(id, component);
+    return component;
+  }, []);
+
   return (
     <AppContext.Provider
       value={{
@@ -274,6 +375,19 @@ export function AppProvider({ children }) {
         // DM in-memory store
         dmMessages,
         addDMMessage,
+        // App Store
+        pinnedAppIds,
+        pinnedApps,
+        pinApp,
+        unpinApp,
+        isPinnedApp,
+        // Community extensions
+        installedExtensions,
+        isInstalledExtension,
+        installExtension,
+        uninstallExtension,
+        getExtensionById,
+        getOrLoadExtensionComponent,
       }}
     >
       {children}

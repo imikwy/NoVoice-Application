@@ -10,6 +10,8 @@ import MembersSidebar from '../components/MembersSidebar';
 import AddFriendModal from '../components/AddFriendModal';
 import CreateServerModal from '../components/CreateServerModal';
 import JoinServerModal from '../components/JoinServerModal';
+import AppStoreView from '../components/AppStoreView';
+import AppView from '../components/AppView';
 
 export default function Home() {
   const { activeView, activeChannel, friends, servers } = useApp();
@@ -23,6 +25,8 @@ export default function Home() {
   const isServerView = activeView?.type === 'server';
   const isDMView = activeView?.type === 'friend';
   const isPendingView = activeView?.type === 'pending';
+  const isAppStoreView = activeView?.type === 'appstore';
+  const isAppView = activeView?.type === 'app';
   const hasContent = activeView !== null;
   const isEmpty = friends.length === 0 && servers.length === 0 && !hasContent;
 
@@ -54,7 +58,11 @@ export default function Home() {
       </AnimatePresence>
 
       {/* Main content */}
-      {isPendingView ? (
+      {isAppStoreView ? (
+        <AppStoreView />
+      ) : isAppView ? (
+        <AppView />
+      ) : isPendingView ? (
         <PendingRequests />
       ) : hasContent && (isDMView || (isServerView && activeChannel)) ? (
         <ChatArea

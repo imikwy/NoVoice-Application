@@ -117,7 +117,7 @@ function evaluateVoiceHealth(stats, hasRemotePeers, isConnected) {
     return { level: 'idle', label: 'Disconnected' };
   }
   if (!hasRemotePeers) {
-    return { level: 'idle', label: 'Waiting' };
+    return { level: 'idle', label: 'Ready' };
   }
 
   const loss = Number(stats?.packetLossPercent);
@@ -426,6 +426,8 @@ export function VoiceProvider({ children }) {
   const lastIceFetchAtRef = useRef(0);
   const iceConfigurationRef = useRef({ iceServers: DEFAULT_ICE_SERVERS });
   const analyserNodeRef = useRef(null);
+  const monitorNodeRef = useRef(null);
+  const micTestEnabledRef = useRef(false);
   const micTestFrameRef = useRef(0);
 
   useEffect(() => {
@@ -523,11 +525,13 @@ export function VoiceProvider({ children }) {
     try { sourceNodeRef.current?.disconnect(); } catch {}
     try { gainNodeRef.current?.disconnect(); } catch {}
     try { analyserNodeRef.current?.disconnect(); } catch {}
+    try { monitorNodeRef.current?.disconnect(); } catch {}
     try { destinationNodeRef.current?.disconnect(); } catch {}
 
     sourceNodeRef.current = null;
     gainNodeRef.current = null;
     analyserNodeRef.current = null;
+    monitorNodeRef.current = null;
     destinationNodeRef.current = null;
 
     if (audioContextRef.current) {
@@ -573,13 +577,17 @@ export function VoiceProvider({ children }) {
         const gainNode = context.createGain();
         const analyserNode = context.createAnalyser();
         const destinationNode = context.createMediaStreamDestination();
+        const monitorNode = context.createGain();
         gainNode.gain.value = clamp(inputGain / 100, 0, 2);
         analyserNode.fftSize = 1024;
         analyserNode.smoothingTimeConstant = 0.75;
+        monitorNode.gain.value = micTestEnabledRef.current ? 0.8 : 0;
 
         sourceNode.connect(gainNode);
         gainNode.connect(analyserNode);
         gainNode.connect(destinationNode);
+        analyserNode.connect(monitorNode);
+        monitorNode.connect(context.destination);
 
         const processedTrack = destinationNode.stream.getAudioTracks()[0];
         if (!processedTrack) {
@@ -594,6 +602,7 @@ export function VoiceProvider({ children }) {
         sourceNodeRef.current = sourceNode;
         gainNodeRef.current = gainNode;
         analyserNodeRef.current = analyserNode;
+        monitorNodeRef.current = monitorNode;
         destinationNodeRef.current = destinationNode;
 
         return { stream: processedStream, track: processedTrack };
@@ -643,11 +652,15 @@ export function VoiceProvider({ children }) {
       };
     }
 
-    const nowMs = Date.now();
-    const bitrateSamples = [];
-    const lossSamples = [];
-    const jitterSamples = [];
-    const rttSamples = [];
+  const nowMs = Date.now();
+  const bitrateSamples = [];
+  const lossSamples = [];
+  const jitterSamples = [];
+  const rttSamples = [];
+  const toFiniteNumber = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  };
 
     await Promise.all(
       peerEntries.map(async ([remoteUserId, peer]) => {
@@ -665,41 +678,55 @@ export function VoiceProvider({ children }) {
           let inbound = null;
           let selectedPair = null;
           let transport = null;
+          const outboundCandidates = [];
+          const remoteInboundCandidates = [];
+          const inboundCandidates = [];
+          const candidatePairCandidates = [];
+          const isLikelyAudioReport = (report) => {
+            if (!report) return false;
+            if (report.kind === 'audio' || report.mediaType === 'audio') return true;
+            if (report.kind === 'video' || report.mediaType === 'video') return false;
+            return true;
+          };
 
           stats.forEach((report) => {
             if (
               report.type === 'outbound-rtp'
               && !report.isRemote
-              && (report.kind === 'audio' || report.mediaType === 'audio')
             ) {
-              outbound = report;
+              outboundCandidates.push(report);
             } else if (
               report.type === 'remote-inbound-rtp'
-              && (report.kind === 'audio' || report.mediaType === 'audio')
             ) {
-              remoteInbound = report;
+              remoteInboundCandidates.push(report);
             } else if (
               report.type === 'inbound-rtp'
               && !report.isRemote
-              && (report.kind === 'audio' || report.mediaType === 'audio')
             ) {
-              inbound = report;
+              inboundCandidates.push(report);
             } else if (
               report.type === 'candidate-pair'
-              && (report.selected || report.nominated)
-              && report.state === 'succeeded'
             ) {
-              selectedPair = report;
+              candidatePairCandidates.push(report);
             } else if (report.type === 'transport') {
               transport = report;
             }
           });
+
+          outbound = outboundCandidates.find(isLikelyAudioReport) || outboundCandidates[0] || null;
+          remoteInbound = remoteInboundCandidates.find(isLikelyAudioReport) || remoteInboundCandidates[0] || null;
+          inbound = inboundCandidates.find(isLikelyAudioReport) || inboundCandidates[0] || null;
 
           if (transport?.selectedCandidatePairId) {
             const maybePair = reports.get(transport.selectedCandidatePairId);
             if (maybePair && maybePair.type === 'candidate-pair') {
               selectedPair = maybePair;
             }
+          }
+          if (!selectedPair) {
+            selectedPair = candidatePairCandidates.find((pair) => (
+              (pair.selected || pair.nominated) && pair.state === 'succeeded'
+            )) || candidatePairCandidates[0] || null;
           }
 
           if (!remoteInbound && outbound?.remoteId && reports.has(outbound.remoteId)) {
@@ -708,12 +735,32 @@ export function VoiceProvider({ children }) {
               remoteInbound = linked;
             }
           }
+          if (!remoteInbound && inbound?.remoteId && reports.has(inbound.remoteId)) {
+            const linked = reports.get(inbound.remoteId);
+            if (linked?.type === 'remote-inbound-rtp') {
+              remoteInbound = linked;
+            }
+          }
 
           const cacheKey = remoteUserId;
           const prev = senderStatsCacheRef.current.get(cacheKey);
+          let bitrateSampleAdded = false;
+          const outboundBytesSent = toFiniteNumber(outbound?.bytesSent);
 
-          if (outbound && prev?.timestampMs && Number.isFinite(outbound.bytesSent)) {
-            const deltaBytes = Number(outbound.bytesSent) - Number(prev.bytesSent || 0);
+          if (outbound && prev?.timestampMs && outboundBytesSent !== null) {
+            const deltaBytes = outboundBytesSent - Number(prev.bytesSent || 0);
+            const deltaSeconds = Math.max((nowMs - prev.timestampMs) / 1000, 0.001);
+            if (deltaBytes >= 0) {
+              bitrateSamples.push((deltaBytes * 8) / 1000 / deltaSeconds);
+              bitrateSampleAdded = true;
+            }
+          }
+
+          const pairBytes = selectedPair
+            ? (toFiniteNumber(selectedPair.bytesSent) || 0) + (toFiniteNumber(selectedPair.bytesReceived) || 0)
+            : null;
+          if (!bitrateSampleAdded && prev?.timestampMs && pairBytes !== null && Number.isFinite(prev.pairBytes)) {
+            const deltaBytes = pairBytes - Number(prev.pairBytes || 0);
             const deltaSeconds = Math.max((nowMs - prev.timestampMs) / 1000, 0.001);
             if (deltaBytes >= 0) {
               bitrateSamples.push((deltaBytes * 8) / 1000 / deltaSeconds);
@@ -732,6 +779,18 @@ export function VoiceProvider({ children }) {
             if (total > 0 && deltaSent >= 0 && deltaLost >= 0) {
               lossSamples.push((deltaLost / total) * 100);
             }
+          } else if (inbound) {
+            const currReceived = Number(inbound.packetsReceived || 0);
+            const currLost = Number(inbound.packetsLost || 0);
+            const prevReceived = Number(prev?.inboundPacketsReceived || 0);
+            const prevLost = Number(prev?.inboundPacketsLost || 0);
+
+            const deltaReceived = currReceived - prevReceived;
+            const deltaLost = currLost - prevLost;
+            const total = deltaReceived + Math.max(deltaLost, 0);
+            if (total > 0 && deltaReceived >= 0 && deltaLost >= 0) {
+              lossSamples.push((deltaLost / total) * 100);
+            }
           }
 
           if (remoteInbound && Number.isFinite(remoteInbound.jitter)) {
@@ -742,15 +801,20 @@ export function VoiceProvider({ children }) {
 
           if (remoteInbound && Number.isFinite(remoteInbound.roundTripTime)) {
             rttSamples.push(Number(remoteInbound.roundTripTime) * 1000);
+          } else if (inbound && Number.isFinite(inbound.roundTripTime)) {
+            rttSamples.push(Number(inbound.roundTripTime) * 1000);
           } else if (selectedPair && Number.isFinite(selectedPair.currentRoundTripTime)) {
             rttSamples.push(Number(selectedPair.currentRoundTripTime) * 1000);
           }
 
           senderStatsCacheRef.current.set(cacheKey, {
             timestampMs: nowMs,
-            bytesSent: Number(outbound?.bytesSent || 0),
+            bytesSent: outboundBytesSent || 0,
             packetsSent: Number(outbound?.packetsSent || 0),
-            packetsLost: Number(remoteInbound?.packetsLost || 0),
+            packetsLost: Number(remoteInbound?.packetsLost || prev?.packetsLost || 0),
+            pairBytes,
+            inboundPacketsReceived: Number(inbound?.packetsReceived || prev?.inboundPacketsReceived || 0),
+            inboundPacketsLost: Number(inbound?.packetsLost || prev?.inboundPacketsLost || 0),
           });
         } catch {
           // stats can fail on browser transitions
@@ -1275,7 +1339,9 @@ export function VoiceProvider({ children }) {
   }, []);
 
   const setMicTestEnabled = useCallback((enabled) => {
-    setMicTestEnabledState(Boolean(enabled));
+    const next = Boolean(enabled);
+    micTestEnabledRef.current = next;
+    setMicTestEnabledState(next);
   }, []);
 
   const renegotiateVoicePeers = useCallback(async () => {
@@ -1394,6 +1460,7 @@ export function VoiceProvider({ children }) {
 
     if (!micTestEnabled || !voiceConnected) {
       setMicTestLevel(0);
+      if (monitorNodeRef.current) monitorNodeRef.current.gain.value = 0;
       return;
     }
 
@@ -1402,6 +1469,9 @@ export function VoiceProvider({ children }) {
       setMicTestLevel(0);
       return;
     }
+
+    // Route processed audio to speakers so user hears themselves as others do
+    if (monitorNodeRef.current) monitorNodeRef.current.gain.value = 0.8;
 
     let cancelled = false;
     const sampleBuffer = new Uint8Array(analyser.fftSize);
@@ -1541,7 +1611,10 @@ export function VoiceProvider({ children }) {
     };
   }, [voiceConnected, voiceQualityMode, collectVoiceMetrics]);
 
-  const hasRemoteVoicePeers = voiceParticipants.some((participant) => participant.id !== user?.id);
+  const hasRemoteVoicePeers = (
+    voiceParticipants.some((participant) => participant.id !== user?.id)
+    || remoteAudioStreams.some((remote) => remote.userId !== user?.id)
+  );
   const voiceHealth = evaluateVoiceHealth(voiceNetworkStats, hasRemoteVoicePeers, voiceConnected);
 
   return (

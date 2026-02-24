@@ -1,8 +1,11 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
+const fs = require('fs');
 const os = require('os');
 const net = require('net');
+const https = require('https');
+const http = require('http');
 
 let mainWindow;
 let tray;
@@ -323,4 +326,84 @@ ipcMain.handle('updater:restart-and-install', () => {
   app.isQuitting = true;
   autoUpdater.quitAndInstall();
   return { success: true };
+});
+
+// ── Extensions (Community Apps) ───────────────────────────────────────────────
+
+function getExtensionsDir() {
+  return path.join(app.getPath('userData'), 'novoice-extensions');
+}
+
+function downloadFile(url, destPath) {
+  return new Promise((resolve, reject) => {
+    const protocol = url.startsWith('https') ? https : http;
+    const file = fs.createWriteStream(destPath);
+
+    const request = protocol.get(url, (response) => {
+      // Follow redirects (GitHub releases redirect to CDN)
+      if (response.statusCode === 301 || response.statusCode === 302) {
+        file.close();
+        try { fs.unlinkSync(destPath); } catch {}
+        return downloadFile(response.headers.location, destPath).then(resolve).catch(reject);
+      }
+      if (response.statusCode !== 200) {
+        file.close();
+        try { fs.unlinkSync(destPath); } catch {}
+        return reject(new Error(`Download failed: HTTP ${response.statusCode}`));
+      }
+      response.pipe(file);
+      file.on('finish', () => file.close(() => resolve()));
+      file.on('error', (err) => {
+        try { fs.unlinkSync(destPath); } catch {}
+        reject(err);
+      });
+    });
+
+    request.on('error', (err) => {
+      try { fs.unlinkSync(destPath); } catch {}
+      reject(err);
+    });
+  });
+}
+
+// List all installed extensions (reads manifests from userData/novoice-extensions/)
+ipcMain.handle('extensions:list', () => {
+  const dir = getExtensionsDir();
+  if (!fs.existsSync(dir)) return [];
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  const result = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const manifestPath = path.join(dir, entry.name, 'app.json');
+    if (!fs.existsSync(manifestPath)) continue;
+    try {
+      result.push(JSON.parse(fs.readFileSync(manifestPath, 'utf-8')));
+    } catch {}
+  }
+  return result;
+});
+
+// Download and install an extension
+ipcMain.handle('extensions:install', async (_event, { id, manifest, bundleUrl }) => {
+  const dir = path.join(getExtensionsDir(), id);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'app.json'), JSON.stringify(manifest, null, 2));
+  await downloadFile(bundleUrl, path.join(dir, 'app.bundle.js'));
+  return true;
+});
+
+// Remove an installed extension
+ipcMain.handle('extensions:uninstall', (_event, { id }) => {
+  const dir = path.join(getExtensionsDir(), id);
+  if (fs.existsSync(dir)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  return true;
+});
+
+// Read bundle code for dynamic loading in the renderer
+ipcMain.handle('extensions:readBundle', (_event, { id }) => {
+  const bundlePath = path.join(getExtensionsDir(), id, 'app.bundle.js');
+  if (!fs.existsSync(bundlePath)) throw new Error('Extension bundle not found: ' + id);
+  return fs.readFileSync(bundlePath, 'utf-8');
 });

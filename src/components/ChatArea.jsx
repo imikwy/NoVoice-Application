@@ -468,7 +468,7 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
                     <div className="flex items-center rounded-xl overflow-hidden">
                       <button
                         onClick={toggleSelfMute}
-                        className={`h-8 inline-flex items-center gap-1.5 px-2.5 text-xs transition-all ${
+                        className={`h-7 inline-flex items-center gap-1.5 px-2.5 text-xs transition-all ${
                           effectiveLocalMuted
                             ? 'text-nv-warning bg-nv-warning/10'
                             : 'text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.06]'
@@ -484,7 +484,7 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
                           setShowFxMenu(false);
                           setShowMicMenu((prev) => !prev);
                         }}
-                        className={`h-8 w-8 inline-flex items-center justify-center text-xs transition-all ${
+                        className={`h-7 w-7 inline-flex items-center justify-center text-xs transition-all ${
                           showMicMenu
                             ? 'text-nv-text-primary bg-white/[0.08]'
                             : 'text-nv-text-tertiary hover:text-nv-text-primary hover:bg-white/[0.06]'
@@ -587,7 +587,7 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
                     <div className="flex items-center rounded-xl overflow-hidden">
                       <button
                         onClick={toggleDeafen}
-                        className={`h-8 inline-flex items-center gap-1.5 px-2.5 text-xs transition-all ${
+                        className={`h-7 inline-flex items-center gap-1.5 px-2.5 text-xs transition-all ${
                           deafened
                             ? 'text-nv-warning bg-nv-warning/10'
                             : 'text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.06]'
@@ -603,7 +603,7 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
                           setShowFxMenu(false);
                           setShowOutputMenu((prev) => !prev);
                         }}
-                        className={`h-8 w-8 inline-flex items-center justify-center text-xs transition-all ${
+                        className={`h-7 w-7 inline-flex items-center justify-center text-xs transition-all ${
                           showOutputMenu
                             ? 'text-nv-text-primary bg-white/[0.08]'
                             : 'text-nv-text-tertiary hover:text-nv-text-primary hover:bg-white/[0.06]'
@@ -712,9 +712,9 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
                           setShowOutputDeviceList(false);
                           setShowFxMenu((prev) => !prev);
                         }}
-                        className={`h-8 w-8 inline-flex items-center justify-center transition-all ${
-                          enabledFxCount > 0
-                            ? 'text-nv-accent bg-nv-accent/10'
+                        className={`h-7 w-7 inline-flex items-center justify-center transition-all ${
+                          showFxMenu
+                            ? 'text-nv-text-primary bg-white/[0.08]'
                             : 'text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.06]'
                         }`}
                         title="Audio FX settings"
@@ -729,7 +729,7 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
                           setShowOutputDeviceList(false);
                           setShowFxMenu((prev) => !prev);
                         }}
-                        className={`h-8 w-8 inline-flex items-center justify-center text-xs transition-all ${
+                        className={`h-7 w-7 inline-flex items-center justify-center text-xs transition-all ${
                           showFxMenu
                             ? 'text-nv-text-primary bg-white/[0.08]'
                             : 'text-nv-text-tertiary hover:text-nv-text-primary hover:bg-white/[0.06]'
@@ -743,236 +743,177 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
                     <AnimatePresence>
                       {showFxMenu && (
                         <motion.div
-                          initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                          initial={{ opacity: 0, y: 8, scale: 0.96 }}
                           animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: 6, scale: 0.98 }}
-                          className="absolute right-0 mt-2 w-72 rounded-2xl border border-white/[0.08] bg-nv-channels/95 backdrop-blur-xl shadow-[0_20px_45px_rgba(0,0,0,0.45)] z-40 p-3"
+                          exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                          transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+                          className="absolute right-0 mt-2 w-[420px] rounded-2xl border border-white/[0.08] bg-nv-channels/97 backdrop-blur-2xl shadow-[0_28px_64px_rgba(0,0,0,0.6)] z-40 overflow-hidden"
                         >
-                          <div className="flex items-center justify-between mb-2">
-                            <p className="text-[10px] text-nv-text-tertiary uppercase tracking-wide">Audio FX</p>
-                            <span className="text-[10px] text-nv-text-tertiary">{enabledFxCount}/4 active</span>
+                          {/* Header */}
+                          <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-white/[0.06]">
+                            <p className="text-[11px] font-semibold text-nv-text-tertiary uppercase tracking-widest">Audio FX</p>
+                            <span className="text-[11px] text-nv-text-tertiary tabular-nums">{enabledFxCount}/4 active</span>
                           </div>
 
-                          <div className="mb-2.5 rounded-xl border border-white/[0.08] bg-white/[0.02] p-2">
-                            <p className="text-[10px] text-nv-text-tertiary uppercase tracking-wide mb-1.5">Voice Quality</p>
-                            <div className="grid grid-cols-3 gap-1">
-                              {qualityOptions.map((option) => {
-                                const selected = voiceQualityMode === option.key;
+                          <div className="p-3 space-y-3">
+                            {/* Row 1: Quality + Transport */}
+                            <div className="grid grid-cols-2 gap-3">
+                              {/* Voice Quality */}
+                              <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-3">
+                                <p className="text-[10px] font-semibold text-nv-text-tertiary uppercase tracking-widest mb-3">Voice Quality</p>
+                                <div className="grid grid-cols-3 gap-1.5 mb-3">
+                                  {qualityOptions.map((option) => {
+                                    const selected = voiceQualityMode === option.key;
+                                    return (
+                                      <button
+                                        key={option.key}
+                                        onClick={() => setVoiceQualityMode(option.key)}
+                                        className={`rounded-lg py-2 border transition-all text-center ${
+                                          selected
+                                            ? 'border-nv-accent/55 bg-nv-accent/[0.15] text-nv-accent'
+                                            : 'border-white/[0.08] bg-white/[0.02] text-nv-text-tertiary hover:text-nv-text-primary hover:bg-white/[0.06]'
+                                        }`}
+                                      >
+                                        <p className="text-[11px] font-semibold leading-none">{option.label}</p>
+                                        <p className="text-[9px] mt-1 opacity-65 leading-none">{option.subLabel}</p>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                <div className="space-y-1.5 border-t border-white/[0.06] pt-2.5">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] text-nv-text-tertiary">Target</span>
+                                    <span className="text-[10px] text-nv-text-secondary tabular-nums font-medium">{activeBitrateKbps} kbps</span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] text-nv-text-tertiary">Live</span>
+                                    <span className="text-[10px] text-nv-text-secondary tabular-nums">
+                                      {Number.isFinite(voiceNetworkStats?.measuredBitrateKbps) ? `${voiceNetworkStats.measuredBitrateKbps} kbps` : hasRemoteVoicePeers ? '…' : '—'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between gap-1 pt-0.5">
+                                    {[['Loss', lossText], ['Jitter', jitterText], ['RTT', rttText]].map(([label, val]) => (
+                                      <div key={label} className="flex flex-col items-center flex-1">
+                                        <span className="text-[9px] text-nv-text-tertiary">{label}</span>
+                                        <span className="text-[10px] text-nv-text-secondary tabular-nums">{val}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Transport */}
+                              <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-3">
+                                <p className="text-[10px] font-semibold text-nv-text-tertiary uppercase tracking-widest mb-3">Transport</p>
+                                <p className="text-[10px] text-nv-text-tertiary mb-1.5">Forward Error Correction</p>
+                                <div className="grid grid-cols-3 gap-1.5 mb-1">
+                                  {fecOptions.map((option) => {
+                                    const selected = fecMode === option.key;
+                                    return (
+                                      <button
+                                        key={option.key}
+                                        onClick={() => setFecMode(option.key)}
+                                        className={`rounded-lg py-2 border transition-all text-center ${
+                                          selected
+                                            ? 'border-nv-accent/55 bg-nv-accent/[0.15] text-nv-accent'
+                                            : 'border-white/[0.08] bg-white/[0.02] text-nv-text-tertiary hover:text-nv-text-primary hover:bg-white/[0.06]'
+                                        }`}
+                                      >
+                                        <p className="text-[11px] font-semibold leading-none">{option.label}</p>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                <p className="text-[10px] text-nv-text-tertiary mb-3">Effective: <span className="text-nv-text-secondary">{effectiveFecEnabled ? 'On' : 'Off'}</span></p>
+                                <div className="border-t border-white/[0.06] pt-2.5 space-y-3">
+                                  {[
+                                    { label: 'Low Latency', desc: 'Smaller packetization', value: lowLatencyMode, toggle: () => setLowLatencyMode(!lowLatencyMode) },
+                                    { label: 'Prioritize Pkts', desc: 'High send priority', value: prioritizeVoicePackets, toggle: () => setPrioritizeVoicePackets(!prioritizeVoicePackets) },
+                                  ].map(({ label, desc, value, toggle }) => (
+                                    <button key={label} onClick={toggle} className="w-full flex items-center justify-between gap-3 group">
+                                      <div className="text-left min-w-0">
+                                        <p className="text-[11px] font-medium text-nv-text-primary leading-none">{label}</p>
+                                        <p className="text-[10px] text-nv-text-tertiary mt-0.5">{desc}</p>
+                                      </div>
+                                      <span className={`relative shrink-0 inline-flex items-center w-9 h-5 rounded-full border-2 border-transparent overflow-hidden transition-colors duration-200 ${value ? 'bg-nv-accent' : 'bg-white/[0.15]'}`}>
+                                        <span className={`inline-block w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${value ? 'translate-x-4' : 'translate-x-0'}`} />
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Row 2: Input Control */}
+                            <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-3">
+                              <p className="text-[10px] font-semibold text-nv-text-tertiary uppercase tracking-widest mb-3">Input Control</p>
+                              <div className="flex items-stretch gap-3">
+                                <div className="grid grid-cols-2 gap-1.5 flex-1">
+                                  {[
+                                    { key: 'voice', label: 'Voice', sub: 'Always-on' },
+                                    { key: 'ptt', label: 'Push To Talk', sub: pttKey },
+                                  ].map(({ key, label, sub }) => {
+                                    const selected = inputMode === key;
+                                    return (
+                                      <button
+                                        key={key}
+                                        onClick={() => setInputMode(key)}
+                                        className={`rounded-lg py-2.5 border transition-all text-center ${
+                                          selected
+                                            ? 'border-nv-accent/55 bg-nv-accent/[0.15] text-nv-accent'
+                                            : 'border-white/[0.08] bg-white/[0.02] text-nv-text-tertiary hover:text-nv-text-primary hover:bg-white/[0.06]'
+                                        }`}
+                                      >
+                                        <p className="text-[11px] font-semibold leading-none">{label}</p>
+                                        <p className="text-[9px] mt-1 opacity-65 leading-none">{sub}</p>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                <div className="flex flex-col items-center justify-center gap-1.5 border border-white/[0.07] bg-white/[0.02] rounded-lg px-3 py-2 min-w-[72px]">
+                                  <p className="text-[10px] text-nv-text-secondary font-medium">Mic Test</p>
+                                  <button
+                                    onClick={() => setMicTestEnabled(!micTestEnabled)}
+                                    className={`relative inline-flex items-center w-9 h-5 rounded-full border-2 border-transparent overflow-hidden transition-colors duration-200 ${micTestEnabled ? 'bg-nv-accent' : 'bg-white/[0.15]'}`}
+                                  >
+                                    <span className={`inline-block w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${micTestEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                                  </button>
+                                </div>
+                              </div>
+                              {inputMode === 'ptt' && (
+                                <p className="text-[10px] text-nv-text-tertiary mt-2.5">{pttPressed ? 'PTT active — sending audio' : `Hold ${pttKey} to speak`}</p>
+                              )}
+                              {micTestEnabled && (
+                                <div className="mt-2.5 space-y-1.5">
+                                  <div className="h-1.5 w-full rounded-full bg-white/[0.08] overflow-hidden">
+                                    <div className="h-full rounded-full bg-nv-accent transition-[width] duration-75" style={{ width: `${micTestLevel}%` }} />
+                                  </div>
+                                  <p className="text-[10px] text-nv-text-tertiary">🎧 Use headphones to avoid feedback</p>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Row 3: Audio FX — 2×2 grid */}
+                            <div className="grid grid-cols-2 gap-2">
+                              {audioFxOptions.map((option) => {
+                                const enabled = Boolean(audioProcessing?.[option.key]);
                                 return (
                                   <button
                                     key={option.key}
-                                    onClick={() => setVoiceQualityMode(option.key)}
-                                    className={`rounded-lg px-2 py-1.5 border transition-all ${
-                                      selected
-                                        ? 'border-nv-accent/45 bg-nv-accent/12 text-nv-accent'
-                                        : 'border-white/[0.08] bg-white/[0.01] text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.05]'
-                                    }`}
-                                    title={option.label}
+                                    onClick={() => setAudioProcessingOption(option.key, !enabled)}
+                                    className="flex items-center justify-between gap-3 px-3 py-3 rounded-xl border border-white/[0.07] bg-white/[0.03] hover:bg-white/[0.05] transition-colors text-left"
                                   >
-                                    <p className="text-[11px] font-medium leading-none">{option.label}</p>
-                                    <p className="text-[9px] mt-0.5 opacity-80 leading-none">{option.subLabel}</p>
+                                    <div className="min-w-0">
+                                      <p className="text-[11px] font-semibold text-nv-text-primary leading-none">{option.label}</p>
+                                      <p className="text-[10px] text-nv-text-tertiary mt-1 leading-snug">{option.description}</p>
+                                    </div>
+                                    <span className={`relative shrink-0 inline-flex items-center w-9 h-5 rounded-full border-2 border-transparent overflow-hidden transition-colors duration-200 ${enabled ? 'bg-nv-accent' : 'bg-white/[0.15]'}`}>
+                                      <span className={`inline-block w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${enabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                                    </span>
                                   </button>
                                 );
                               })}
                             </div>
-                            <div className="mt-2 text-[10px] text-nv-text-tertiary flex items-center justify-between gap-2">
-                              <span>{`Target ${activeBitrateKbps} kbps`}</span>
-                              <span>{liveBitrateText}</span>
-                            </div>
-                            <div className="mt-1 text-[10px] text-nv-text-tertiary flex items-center justify-between gap-2">
-                              <span>{`Loss ${lossText}`}</span>
-                              <span>{`Jitter ${jitterText}`}</span>
-                              <span>{`RTT ${rttText}`}</span>
-                            </div>
-                          </div>
-
-                          <div className="mb-2.5 rounded-xl border border-white/[0.08] bg-white/[0.02] p-2">
-                            <p className="text-[10px] text-nv-text-tertiary uppercase tracking-wide mb-1.5">Transport</p>
-
-                            <div className="mb-2">
-                              <p className="text-[10px] text-nv-text-tertiary uppercase tracking-wide mb-1">Forward Error Correction</p>
-                              <div className="grid grid-cols-3 gap-1">
-                                {fecOptions.map((option) => {
-                                  const selected = fecMode === option.key;
-                                  return (
-                                    <button
-                                      key={option.key}
-                                      onClick={() => setFecMode(option.key)}
-                                      className={`rounded-lg px-2 py-1.5 border transition-all ${
-                                        selected
-                                          ? 'border-nv-accent/45 bg-nv-accent/12 text-nv-accent'
-                                          : 'border-white/[0.08] bg-white/[0.01] text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.05]'
-                                      }`}
-                                      title={`FEC ${option.label}`}
-                                    >
-                                      <p className="text-[11px] font-medium leading-none">{option.label}</p>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                              <p className="mt-1 text-[10px] text-nv-text-tertiary">
-                                {`Effective: ${effectiveFecEnabled ? 'On' : 'Off'}`}
-                              </p>
-                            </div>
-
-                            <div className="space-y-1.5">
-                              <button
-                                onClick={() => setLowLatencyMode(!lowLatencyMode)}
-                                className={`w-full text-left rounded-xl border px-2.5 py-2 transition-all ${
-                                  lowLatencyMode
-                                    ? 'border-nv-accent/35 bg-nv-accent/[0.08]'
-                                    : 'border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05]'
-                                }`}
-                                title="Low latency voice mode"
-                              >
-                                <div className="flex items-center justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <p className={`text-xs font-medium truncate ${lowLatencyMode ? 'text-nv-accent' : 'text-nv-text-primary'}`}>
-                                      Low Latency Stream
-                                    </p>
-                                    <p className="text-[10px] text-nv-text-tertiary truncate">
-                                      Smaller packetization for faster voice delivery
-                                    </p>
-                                  </div>
-                                  <span className={`relative w-9 h-5 rounded-full transition-all ${lowLatencyMode ? 'bg-nv-accent/70' : 'bg-white/[0.12]'}`}>
-                                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${lowLatencyMode ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                                  </span>
-                                </div>
-                              </button>
-
-                              <button
-                                onClick={() => setPrioritizeVoicePackets(!prioritizeVoicePackets)}
-                                className={`w-full text-left rounded-xl border px-2.5 py-2 transition-all ${
-                                  prioritizeVoicePackets
-                                    ? 'border-nv-accent/35 bg-nv-accent/[0.08]'
-                                    : 'border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05]'
-                                }`}
-                                title="Prioritize voice packets"
-                              >
-                                <div className="flex items-center justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <p className={`text-xs font-medium truncate ${prioritizeVoicePackets ? 'text-nv-accent' : 'text-nv-text-primary'}`}>
-                                      Prioritize Voice Packets
-                                    </p>
-                                    <p className="text-[10px] text-nv-text-tertiary truncate">
-                                      Request high send priority in WebRTC transport
-                                    </p>
-                                  </div>
-                                  <span className={`relative w-9 h-5 rounded-full transition-all ${prioritizeVoicePackets ? 'bg-nv-accent/70' : 'bg-white/[0.12]'}`}>
-                                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${prioritizeVoicePackets ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                                  </span>
-                                </div>
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="mb-2.5 rounded-xl border border-white/[0.08] bg-white/[0.02] p-2">
-                            <p className="text-[10px] text-nv-text-tertiary uppercase tracking-wide mb-1.5">Input Control</p>
-                            <div className="grid grid-cols-2 gap-1 mb-2">
-                              <button
-                                onClick={() => setInputMode('voice')}
-                                className={`rounded-lg px-2 py-1.5 border transition-all ${
-                                  inputMode === 'voice'
-                                    ? 'border-nv-accent/45 bg-nv-accent/12 text-nv-accent'
-                                    : 'border-white/[0.08] bg-white/[0.01] text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.05]'
-                                }`}
-                                title="Voice activity mode"
-                              >
-                                <p className="text-[11px] font-medium leading-none">Voice</p>
-                                <p className="text-[9px] mt-0.5 opacity-80 leading-none">Always-on</p>
-                              </button>
-                              <button
-                                onClick={() => setInputMode('ptt')}
-                                className={`rounded-lg px-2 py-1.5 border transition-all ${
-                                  inputMode === 'ptt'
-                                    ? 'border-nv-accent/45 bg-nv-accent/12 text-nv-accent'
-                                    : 'border-white/[0.08] bg-white/[0.01] text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.05]'
-                                }`}
-                                title="Push to talk mode"
-                              >
-                                <p className="text-[11px] font-medium leading-none">Push To Talk</p>
-                                <p className="text-[9px] mt-0.5 opacity-80 leading-none">{pttKey}</p>
-                              </button>
-                            </div>
-                            {inputMode === 'ptt' && (
-                              <p className="text-[10px] text-nv-text-tertiary">
-                                {pttPressed ? 'PTT active (sending)' : 'Hold Space to speak'}
-                              </p>
-                            )}
-
-                            <button
-                              onClick={() => setMicTestEnabled(!micTestEnabled)}
-                              className={`w-full mt-2 text-left rounded-xl border px-2.5 py-2 transition-all ${
-                                micTestEnabled
-                                  ? 'border-nv-accent/35 bg-nv-accent/[0.08]'
-                                  : 'border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05]'
-                              }`}
-                              title="Mic test"
-                            >
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="min-w-0">
-                                  <p className={`text-xs font-medium truncate ${micTestEnabled ? 'text-nv-accent' : 'text-nv-text-primary'}`}>
-                                    Mic Test
-                                  </p>
-                                  <p className="text-[10px] text-nv-text-tertiary truncate">
-                                    Live input level monitor
-                                  </p>
-                                </div>
-                                <span className={`relative w-9 h-5 rounded-full transition-all ${micTestEnabled ? 'bg-nv-accent/70' : 'bg-white/[0.12]'}`}>
-                                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${micTestEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                                </span>
-                              </div>
-                              {micTestEnabled && (
-                                <div className="mt-2">
-                                  <div className="h-1.5 w-full rounded-full bg-white/[0.08] overflow-hidden">
-                                    <div
-                                      className="h-full rounded-full bg-nv-accent transition-[width] duration-100"
-                                      style={{ width: `${micTestLevel}%` }}
-                                    />
-                                  </div>
-                                </div>
-                              )}
-                            </button>
-                          </div>
-
-                          <div className="space-y-1.5">
-                            {audioFxOptions.map((option) => {
-                              const enabled = Boolean(audioProcessing?.[option.key]);
-                              return (
-                                <button
-                                  key={option.key}
-                                  onClick={() => setAudioProcessingOption(option.key, !enabled)}
-                                  className={`w-full text-left rounded-xl border px-2.5 py-2 transition-all ${
-                                    enabled
-                                      ? 'border-nv-accent/35 bg-nv-accent/[0.08]'
-                                      : 'border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05]'
-                                  }`}
-                                  title={option.label}
-                                >
-                                  <div className="flex items-center justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <p className={`text-xs font-medium truncate ${enabled ? 'text-nv-accent' : 'text-nv-text-primary'}`}>
-                                        {option.label}
-                                      </p>
-                                      <p className="text-[10px] text-nv-text-tertiary truncate">
-                                        {option.description}
-                                      </p>
-                                    </div>
-                                    <span
-                                      className={`relative w-9 h-5 rounded-full transition-all ${
-                                        enabled ? 'bg-nv-accent/70' : 'bg-white/[0.12]'
-                                      }`}
-                                    >
-                                      <span
-                                        className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                                          enabled ? 'translate-x-4' : 'translate-x-0.5'
-                                        }`}
-                                      />
-                                    </span>
-                                  </div>
-                                </button>
-                              );
-                            })}
                           </div>
                         </motion.div>
                       )}

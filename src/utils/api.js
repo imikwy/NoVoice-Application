@@ -419,6 +419,12 @@ class ApiClient {
     return this.request(`/channel-content/forum/${channelId}/${postId}/replies/${replyId}`, { method: 'DELETE' });
   }
 
+  // ── App Store (community extensions registry) ─────────────────────────────
+
+  async getExtensionsRegistry() {
+    return this.request('/app-store');
+  }
+
   logout() {
     this.setToken(null);
   }
