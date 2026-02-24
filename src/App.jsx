@@ -71,16 +71,16 @@ function AppContent() {
 
   return (
     <SocketProvider>
-      <AppProvider>
-        <VoiceProvider>
-          <div className="h-screen w-screen flex flex-col bg-black overflow-hidden">
-            <TitleBar />
-            <AppErrorBoundary>
+      <AppErrorBoundary>
+        <AppProvider>
+          <VoiceProvider>
+            <div className="h-screen w-screen flex flex-col bg-black overflow-hidden">
+              <TitleBar />
               <Home />
-            </AppErrorBoundary>
-          </div>
-        </VoiceProvider>
-      </AppProvider>
+            </div>
+          </VoiceProvider>
+        </AppProvider>
+      </AppErrorBoundary>
     </SocketProvider>
   );
 }

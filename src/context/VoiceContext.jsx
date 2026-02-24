@@ -71,6 +71,11 @@ const FEC_MODES = {
   off: 'off',
 };
 
+const INPUT_MODES = {
+  voice: 'voice',
+  ptt: 'ptt',
+};
+
 const BASE_AUDIO_CONSTRAINTS = {
   channelCount: 2,
   sampleRate: 48000,
@@ -100,6 +105,50 @@ function normalizeVoiceQualityMode(value) {
 function normalizeFecMode(value) {
   const key = String(value || FEC_MODES.auto).toLowerCase();
   return FEC_MODES[key] || FEC_MODES.auto;
+}
+
+function normalizeInputMode(value) {
+  const key = String(value || INPUT_MODES.voice).toLowerCase();
+  return INPUT_MODES[key] || INPUT_MODES.voice;
+}
+
+function evaluateVoiceHealth(stats, hasRemotePeers, isConnected) {
+  if (!isConnected) {
+    return { level: 'idle', label: 'Disconnected' };
+  }
+  if (!hasRemotePeers) {
+    return { level: 'idle', label: 'Waiting' };
+  }
+
+  const loss = Number(stats?.packetLossPercent);
+  const jitter = Number(stats?.jitterMs);
+  const rtt = Number(stats?.rttMs);
+
+  if (
+    (Number.isFinite(loss) && loss >= 8)
+    || (Number.isFinite(jitter) && jitter >= 28)
+    || (Number.isFinite(rtt) && rtt >= 260)
+  ) {
+    return { level: 'poor', label: 'Poor' };
+  }
+
+  if (
+    (Number.isFinite(loss) && loss >= 3)
+    || (Number.isFinite(jitter) && jitter >= 16)
+    || (Number.isFinite(rtt) && rtt >= 170)
+  ) {
+    return { level: 'fair', label: 'Fair' };
+  }
+
+  if (
+    Number.isFinite(loss)
+    || Number.isFinite(jitter)
+    || Number.isFinite(rtt)
+  ) {
+    return { level: 'good', label: 'Good' };
+  }
+
+  return { level: 'idle', label: 'Analyzing' };
 }
 
 function getVoiceQualityProfile(mode) {
@@ -153,6 +202,9 @@ function loadVoiceSettings() {
         fecMode: FEC_MODES.auto,
         lowLatencyMode: true,
         prioritizeVoicePackets: true,
+        inputMode: INPUT_MODES.voice,
+        pttKey: 'Space',
+        micTestEnabled: false,
       };
     }
 
@@ -168,6 +220,9 @@ function loadVoiceSettings() {
       fecMode: normalizeFecMode(parsed.fecMode),
       lowLatencyMode: parsed.lowLatencyMode !== undefined ? Boolean(parsed.lowLatencyMode) : true,
       prioritizeVoicePackets: parsed.prioritizeVoicePackets !== undefined ? Boolean(parsed.prioritizeVoicePackets) : true,
+      inputMode: normalizeInputMode(parsed.inputMode),
+      pttKey: String(parsed.pttKey || 'Space'),
+      micTestEnabled: Boolean(parsed.micTestEnabled),
     };
   } catch {
     return {
@@ -181,6 +236,9 @@ function loadVoiceSettings() {
       fecMode: FEC_MODES.auto,
       lowLatencyMode: true,
       prioritizeVoicePackets: true,
+      inputMode: INPUT_MODES.voice,
+      pttKey: 'Space',
+      micTestEnabled: false,
     };
   }
 }
@@ -293,7 +351,14 @@ function RemoteAudio({ stream, muted, gain, outputDeviceId }) {
 export function VoiceProvider({ children }) {
   const { user } = useAuth();
   const { socket } = useSocket();
-  const { activeView, activeServerApi } = useApp();
+  let appContext = null;
+  try {
+    appContext = useApp();
+  } catch {
+    appContext = null;
+  }
+  const activeView = appContext?.activeView ?? null;
+  const activeServerApi = appContext?.activeServerApi ?? null;
   const initialSettingsRef = useRef(loadVoiceSettings());
 
   const [activeVoiceChannelId, setActiveVoiceChannelId] = useState(null);
@@ -328,6 +393,11 @@ export function VoiceProvider({ children }) {
       ? Boolean(initialSettingsRef.current.prioritizeVoicePackets)
       : true
   );
+  const [inputMode, setInputModeState] = useState(normalizeInputMode(initialSettingsRef.current.inputMode));
+  const [pttKey, setPttKeyState] = useState(String(initialSettingsRef.current.pttKey || 'Space'));
+  const [pttPressed, setPttPressed] = useState(false);
+  const [micTestEnabled, setMicTestEnabledState] = useState(Boolean(initialSettingsRef.current.micTestEnabled));
+  const [micTestLevel, setMicTestLevel] = useState(0);
   const [effectiveFecEnabled, setEffectiveFecEnabled] = useState(fecMode !== FEC_MODES.off);
   const [targetAudioBitrate, setTargetAudioBitrate] = useState(() =>
     getInitialBitrateForMode(normalizeVoiceQualityMode(initialSettingsRef.current.voiceQualityMode))
@@ -355,6 +425,8 @@ export function VoiceProvider({ children }) {
   const renegotiationRef = useRef({ lastAt: 0, key: '' });
   const lastIceFetchAtRef = useRef(0);
   const iceConfigurationRef = useRef({ iceServers: DEFAULT_ICE_SERVERS });
+  const analyserNodeRef = useRef(null);
+  const micTestFrameRef = useRef(0);
 
   useEffect(() => {
     socketRef.current = socket;
@@ -367,10 +439,6 @@ export function VoiceProvider({ children }) {
   useEffect(() => {
     lastIceFetchAtRef.current = 0;
   }, [activeView?.id, activeServerApi]);
-
-  useEffect(() => {
-    refreshIceConfiguration(false);
-  }, [refreshIceConfiguration, activeView?.id]);
 
   const updateRemoteAudioStreams = useCallback(() => {
     setRemoteAudioStreams([...remoteStreamsRef.current.entries()].map(([userId, stream]) => ({ userId, stream })));
@@ -416,6 +484,10 @@ export function VoiceProvider({ children }) {
     [activeView?.type, activeServerApi]
   );
 
+  useEffect(() => {
+    refreshIceConfiguration(false);
+  }, [refreshIceConfiguration, activeView?.id]);
+
   const getCurrentTargetBitrate = useCallback(
     () => clampBitrateForMode(targetAudioBitrate, voiceQualityMode),
     [targetAudioBitrate, voiceQualityMode]
@@ -444,13 +516,18 @@ export function VoiceProvider({ children }) {
     [getCurrentFmtpMaxBitrate, effectiveFecEnabled, lowLatencyMode]
   );
 
+  const isPushToTalkMode = inputMode === INPUT_MODES.ptt;
+  const effectiveSelfMuted = selfMuted || (isPushToTalkMode && !pttPressed);
+
   const destroyAudioPipeline = useCallback(() => {
     try { sourceNodeRef.current?.disconnect(); } catch {}
     try { gainNodeRef.current?.disconnect(); } catch {}
+    try { analyserNodeRef.current?.disconnect(); } catch {}
     try { destinationNodeRef.current?.disconnect(); } catch {}
 
     sourceNodeRef.current = null;
     gainNodeRef.current = null;
+    analyserNodeRef.current = null;
     destinationNodeRef.current = null;
 
     if (audioContextRef.current) {
@@ -494,10 +571,14 @@ export function VoiceProvider({ children }) {
         const context = new AudioContextClass({ sampleRate: 48000, latencyHint: 'interactive' });
         const sourceNode = context.createMediaStreamSource(microphoneStream);
         const gainNode = context.createGain();
+        const analyserNode = context.createAnalyser();
         const destinationNode = context.createMediaStreamDestination();
         gainNode.gain.value = clamp(inputGain / 100, 0, 2);
+        analyserNode.fftSize = 1024;
+        analyserNode.smoothingTimeConstant = 0.75;
 
         sourceNode.connect(gainNode);
+        gainNode.connect(analyserNode);
         gainNode.connect(destinationNode);
 
         const processedTrack = destinationNode.stream.getAudioTracks()[0];
@@ -512,6 +593,7 @@ export function VoiceProvider({ children }) {
         audioContextRef.current = context;
         sourceNodeRef.current = sourceNode;
         gainNodeRef.current = gainNode;
+        analyserNodeRef.current = analyserNode;
         destinationNodeRef.current = destinationNode;
 
         return { stream: processedStream, track: processedTrack };
@@ -759,6 +841,8 @@ export function VoiceProvider({ children }) {
     bitrateAdjustmentRef.current.lastAdjustedAt = 0;
     renegotiationRef.current.lastAt = 0;
     renegotiationRef.current.key = '';
+    setPttPressed(false);
+    setMicTestLevel(0);
     setVoiceNetworkStats({
       packetLossPercent: null,
       jitterMs: null,
@@ -972,6 +1056,9 @@ export function VoiceProvider({ children }) {
         fecMode,
         lowLatencyMode,
         prioritizeVoicePackets,
+        inputMode,
+        pttKey,
+        micTestEnabled,
       })
     );
   }, [
@@ -985,6 +1072,9 @@ export function VoiceProvider({ children }) {
     fecMode,
     lowLatencyMode,
     prioritizeVoicePackets,
+    inputMode,
+    pttKey,
+    micTestEnabled,
   ]);
 
   useEffect(() => {
@@ -1019,8 +1109,8 @@ export function VoiceProvider({ children }) {
         microphoneStreamRef.current = stream;
         const { stream: outgoingStream } = await buildOutgoingAudioStream(stream);
         localStreamRef.current = outgoingStream;
-        stream.getAudioTracks().forEach((track) => { track.enabled = !selfMuted; });
-        outgoingStream.getAudioTracks().forEach((track) => { track.enabled = !selfMuted; });
+        stream.getAudioTracks().forEach((track) => { track.enabled = !effectiveSelfMuted; });
+        outgoingStream.getAudioTracks().forEach((track) => { track.enabled = !effectiveSelfMuted; });
 
         joinedVoiceChannelRef.current = channelId;
         setActiveVoiceChannelId(channelId);
@@ -1052,7 +1142,7 @@ export function VoiceProvider({ children }) {
       socket,
       voiceConnected,
       joiningVoice,
-      selfMuted,
+      effectiveSelfMuted,
       leaveVoice,
       getAudioConstraint,
       selectedInputDeviceId,
@@ -1093,8 +1183,8 @@ export function VoiceProvider({ children }) {
         await applyTrackConstraints(nextMicrophoneStream);
         const { stream: nextOutgoingStream, track: nextTrack } = await buildOutgoingAudioStream(nextMicrophoneStream);
 
-        nextMicrophoneStream.getAudioTracks().forEach((track) => { track.enabled = !selfMuted; });
-        nextOutgoingStream.getAudioTracks().forEach((track) => { track.enabled = !selfMuted; });
+        nextMicrophoneStream.getAudioTracks().forEach((track) => { track.enabled = !effectiveSelfMuted; });
+        nextOutgoingStream.getAudioTracks().forEach((track) => { track.enabled = !effectiveSelfMuted; });
 
         await replacePeerAudioTrack(nextOutgoingStream, nextTrack, getCurrentSenderOptions());
 
@@ -1112,7 +1202,7 @@ export function VoiceProvider({ children }) {
     },
     [
       getAudioConstraint,
-      selfMuted,
+      effectiveSelfMuted,
       applyTrackConstraints,
       buildOutgoingAudioStream,
       replacePeerAudioTrack,
@@ -1169,6 +1259,23 @@ export function VoiceProvider({ children }) {
 
   const setPrioritizeVoicePackets = useCallback((enabled) => {
     setPrioritizeVoicePacketsState(Boolean(enabled));
+  }, []);
+
+  const setInputMode = useCallback((mode) => {
+    const next = normalizeInputMode(mode);
+    setInputModeState(next);
+    if (next !== INPUT_MODES.ptt) {
+      setPttPressed(false);
+    }
+  }, []);
+
+  const setPttKey = useCallback((keyCode) => {
+    const value = String(keyCode || 'Space').trim();
+    setPttKeyState(value || 'Space');
+  }, []);
+
+  const setMicTestEnabled = useCallback((enabled) => {
+    setMicTestEnabledState(Boolean(enabled));
   }, []);
 
   const renegotiateVoicePeers = useCallback(async () => {
@@ -1240,14 +1347,101 @@ export function VoiceProvider({ children }) {
   }, [fecMode, voiceNetworkStats.packetLossPercent, voiceNetworkStats.jitterMs]);
 
   useEffect(() => {
+    if (inputMode !== INPUT_MODES.ptt) {
+      setPttPressed(false);
+      return;
+    }
+
+    const isEditableTarget = (target) => {
+      if (typeof HTMLElement === 'undefined') return false;
+      if (!target || !(target instanceof HTMLElement)) return false;
+      if (target.isContentEditable) return true;
+      const tag = target.tagName?.toLowerCase();
+      return tag === 'input' || tag === 'textarea' || tag === 'select';
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.code !== pttKey) return;
+      if (isEditableTarget(event.target)) return;
+      setPttPressed(true);
+      event.preventDefault();
+    };
+
+    const handleKeyUp = (event) => {
+      if (event.code !== pttKey) return;
+      setPttPressed(false);
+      event.preventDefault();
+    };
+
+    const handleBlur = () => setPttPressed(false);
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, [inputMode, pttKey]);
+
+  useEffect(() => {
+    if (micTestFrameRef.current) {
+      cancelAnimationFrame(micTestFrameRef.current);
+      micTestFrameRef.current = 0;
+    }
+
+    if (!micTestEnabled || !voiceConnected) {
+      setMicTestLevel(0);
+      return;
+    }
+
+    const analyser = analyserNodeRef.current;
+    if (!analyser) {
+      setMicTestLevel(0);
+      return;
+    }
+
+    let cancelled = false;
+    const sampleBuffer = new Uint8Array(analyser.fftSize);
+
+    const tick = () => {
+      if (cancelled) return;
+      analyser.getByteTimeDomainData(sampleBuffer);
+
+      let sum = 0;
+      for (let i = 0; i < sampleBuffer.length; i += 1) {
+        const normalized = (sampleBuffer[i] - 128) / 128;
+        sum += normalized * normalized;
+      }
+
+      const rms = Math.sqrt(sum / sampleBuffer.length);
+      const level = clamp(Math.round(rms * 240), 0, 100);
+      setMicTestLevel(level);
+
+      micTestFrameRef.current = requestAnimationFrame(tick);
+    };
+
+    micTestFrameRef.current = requestAnimationFrame(tick);
+    return () => {
+      cancelled = true;
+      if (micTestFrameRef.current) {
+        cancelAnimationFrame(micTestFrameRef.current);
+        micTestFrameRef.current = 0;
+      }
+    };
+  }, [micTestEnabled, voiceConnected, inputGain, selectedInputDeviceId]);
+
+  useEffect(() => {
     if (!localStreamRef.current) return;
     localStreamRef.current.getAudioTracks().forEach((track) => {
-      track.enabled = !selfMuted;
+      track.enabled = !effectiveSelfMuted;
     });
     microphoneStreamRef.current?.getAudioTracks().forEach((track) => {
-      track.enabled = !selfMuted;
+      track.enabled = !effectiveSelfMuted;
     });
-  }, [selfMuted]);
+  }, [effectiveSelfMuted]);
 
   useEffect(() => {
     if (!gainNodeRef.current) return;
@@ -1347,6 +1541,9 @@ export function VoiceProvider({ children }) {
     };
   }, [voiceConnected, voiceQualityMode, collectVoiceMetrics]);
 
+  const hasRemoteVoicePeers = voiceParticipants.some((participant) => participant.id !== user?.id);
+  const voiceHealth = evaluateVoiceHealth(voiceNetworkStats, hasRemoteVoicePeers, voiceConnected);
+
   return (
     <VoiceContext.Provider
       value={{
@@ -1378,6 +1575,12 @@ export function VoiceProvider({ children }) {
         effectiveFecEnabled,
         targetAudioBitrate,
         voiceNetworkStats,
+        voiceHealth,
+        inputMode,
+        pttKey,
+        pttPressed,
+        micTestEnabled,
+        micTestLevel,
         setInputDevice,
         setOutputDevice,
         setInputGain,
@@ -1388,6 +1591,9 @@ export function VoiceProvider({ children }) {
         setFecMode,
         setLowLatencyMode,
         setPrioritizeVoicePackets,
+        setInputMode,
+        setPttKey,
+        setMicTestEnabled,
       }}
     >
       {children}

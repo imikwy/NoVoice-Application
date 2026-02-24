@@ -116,6 +116,12 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
     effectiveFecEnabled,
     targetAudioBitrate,
     voiceNetworkStats,
+    voiceHealth,
+    inputMode,
+    pttKey,
+    pttPressed,
+    micTestEnabled,
+    micTestLevel,
     setInputDevice,
     setOutputDevice,
     setInputGain,
@@ -126,6 +132,8 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
     setFecMode,
     setLowLatencyMode,
     setPrioritizeVoicePackets,
+    setInputMode,
+    setMicTestEnabled,
   } = useVoice();
 
   const [messages, setMessages] = useState([]);
@@ -398,6 +406,17 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
       : hasRemoteVoicePeers
         ? '...'
         : '--';
+    const effectiveLocalMuted = selfMuted || (inputMode === 'ptt' && !pttPressed);
+    const micButtonLabel = inputMode === 'ptt'
+      ? (pttPressed && !selfMuted ? 'Talking' : 'PTT')
+      : (selfMuted ? 'Muted' : 'Mic');
+    const voiceHealthToneClass = voiceHealth?.level === 'good'
+      ? 'text-nv-accent border-nv-accent/30 bg-nv-accent/10'
+      : voiceHealth?.level === 'fair'
+        ? 'text-nv-warning border-nv-warning/30 bg-nv-warning/10'
+        : voiceHealth?.level === 'poor'
+          ? 'text-nv-danger border-nv-danger/30 bg-nv-danger/10'
+          : 'text-nv-text-tertiary border-white/[0.12] bg-white/[0.03]';
 
     return (
       <div className="flex-1 flex flex-col bg-nv-content min-w-0">
@@ -439,6 +458,9 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
             <span className="text-[11px] px-2 py-1 rounded-md border border-nv-accent/30 bg-nv-accent/10 text-nv-accent font-medium">
               {`Opus ${activeQualityLabel} ${activeBitrateKbps} kbps · FEC ${effectiveFecEnabled ? 'On' : 'Off'}`}
             </span>
+            <span className={`text-[11px] px-2 py-1 rounded-md border font-medium ${voiceHealthToneClass}`}>
+              {`Voice ${voiceHealth?.label || 'Idle'}`}
+            </span>
             <div className="ml-auto flex items-center gap-2" ref={voiceControlsRef}>
               {isInThisVoiceChannel && (
                 <div className="flex items-center gap-0.5">
@@ -447,14 +469,14 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
                       <button
                         onClick={toggleSelfMute}
                         className={`h-8 inline-flex items-center gap-1.5 px-2.5 text-xs transition-all ${
-                          selfMuted
+                          effectiveLocalMuted
                             ? 'text-nv-warning bg-nv-warning/10'
                             : 'text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.06]'
                         }`}
-                        title={selfMuted ? 'Unmute mic' : 'Mute mic'}
+                        title={inputMode === 'ptt' ? 'Manual mute (Push To Talk active)' : (selfMuted ? 'Unmute mic' : 'Mute mic')}
                       >
-                        {selfMuted ? <MicOff size={12} /> : <Mic size={12} />}
-                        <span>{selfMuted ? 'Muted' : 'Mic'}</span>
+                        {effectiveLocalMuted ? <MicOff size={12} /> : <Mic size={12} />}
+                        <span>{micButtonLabel}</span>
                       </button>
                       <button
                         onClick={() => {
@@ -842,6 +864,75 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
                                 </div>
                               </button>
                             </div>
+                          </div>
+
+                          <div className="mb-2.5 rounded-xl border border-white/[0.08] bg-white/[0.02] p-2">
+                            <p className="text-[10px] text-nv-text-tertiary uppercase tracking-wide mb-1.5">Input Control</p>
+                            <div className="grid grid-cols-2 gap-1 mb-2">
+                              <button
+                                onClick={() => setInputMode('voice')}
+                                className={`rounded-lg px-2 py-1.5 border transition-all ${
+                                  inputMode === 'voice'
+                                    ? 'border-nv-accent/45 bg-nv-accent/12 text-nv-accent'
+                                    : 'border-white/[0.08] bg-white/[0.01] text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.05]'
+                                }`}
+                                title="Voice activity mode"
+                              >
+                                <p className="text-[11px] font-medium leading-none">Voice</p>
+                                <p className="text-[9px] mt-0.5 opacity-80 leading-none">Always-on</p>
+                              </button>
+                              <button
+                                onClick={() => setInputMode('ptt')}
+                                className={`rounded-lg px-2 py-1.5 border transition-all ${
+                                  inputMode === 'ptt'
+                                    ? 'border-nv-accent/45 bg-nv-accent/12 text-nv-accent'
+                                    : 'border-white/[0.08] bg-white/[0.01] text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.05]'
+                                }`}
+                                title="Push to talk mode"
+                              >
+                                <p className="text-[11px] font-medium leading-none">Push To Talk</p>
+                                <p className="text-[9px] mt-0.5 opacity-80 leading-none">{pttKey}</p>
+                              </button>
+                            </div>
+                            {inputMode === 'ptt' && (
+                              <p className="text-[10px] text-nv-text-tertiary">
+                                {pttPressed ? 'PTT active (sending)' : 'Hold Space to speak'}
+                              </p>
+                            )}
+
+                            <button
+                              onClick={() => setMicTestEnabled(!micTestEnabled)}
+                              className={`w-full mt-2 text-left rounded-xl border px-2.5 py-2 transition-all ${
+                                micTestEnabled
+                                  ? 'border-nv-accent/35 bg-nv-accent/[0.08]'
+                                  : 'border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05]'
+                              }`}
+                              title="Mic test"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className={`text-xs font-medium truncate ${micTestEnabled ? 'text-nv-accent' : 'text-nv-text-primary'}`}>
+                                    Mic Test
+                                  </p>
+                                  <p className="text-[10px] text-nv-text-tertiary truncate">
+                                    Live input level monitor
+                                  </p>
+                                </div>
+                                <span className={`relative w-9 h-5 rounded-full transition-all ${micTestEnabled ? 'bg-nv-accent/70' : 'bg-white/[0.12]'}`}>
+                                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${micTestEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                </span>
+                              </div>
+                              {micTestEnabled && (
+                                <div className="mt-2">
+                                  <div className="h-1.5 w-full rounded-full bg-white/[0.08] overflow-hidden">
+                                    <div
+                                      className="h-full rounded-full bg-nv-accent transition-[width] duration-100"
+                                      style={{ width: `${micTestLevel}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </button>
                           </div>
 
                           <div className="space-y-1.5">
