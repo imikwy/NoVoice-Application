@@ -1,1 +1,14 @@
-[]
+[
+  {
+    "id": "snake-game",
+    "name": "Snake",
+    "description": "Classic Snake game with persistent high score.",
+    "version": "1.0.0",
+    "author": "NoVoice",
+    "icon": "🐍",
+    "iconColor": "#32d74b",
+    "tags": ["games"],
+    "bundleUrl": "FILL_IN_AFTER_BUILD",
+    "repository": "https://github.com/YOUR_ORG/novoice-snake"
+  }
+]
