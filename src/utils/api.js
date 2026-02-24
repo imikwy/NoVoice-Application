@@ -255,6 +255,23 @@ class ApiClient {
     return this.request(`/channel-content/calendar/${channelId}/${eventId}`, { method: 'DELETE' });
   }
 
+  // ── Announcements ─────────────────────────────────────────────────────────
+
+  async getAnnouncements(channelId) {
+    return this.request(`/channel-content/announcements/${channelId}`);
+  }
+
+  async createAnnouncement(channelId, data) {
+    return this.request(`/channel-content/announcements/${channelId}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteAnnouncement(channelId, announcementId) {
+    return this.request(`/channel-content/announcements/${channelId}/${announcementId}`, { method: 'DELETE' });
+  }
+
   // ── Tasks ──────────────────────────────────────────────────────────────────
 
   async getTasks(channelId) {

@@ -12,6 +12,7 @@ import {
   Settings,
   FolderPlus,
   Phone,
+  PhoneOff,
   GripVertical,
   Megaphone,
   BookOpen,
@@ -60,7 +61,7 @@ export default function ServerChannels() {
     voiceChannelParticipants,
     activeServerApi,
   } = useApp();
-  const { activeVoiceChannelId, joinVoice } = useVoice();
+  const { activeVoiceChannelId, joinVoice, leaveVoice } = useVoice();
 
   const serverId = activeView?.id;
   const details = serverDetails[serverId];
@@ -401,13 +402,23 @@ export default function ServerChannels() {
         )}
 
         {channel.type === 'voice' && (
-          <button
-            onClick={(e) => handleQuickJoinVoice(e, channel)}
-            className="w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-nv-accent/20 text-nv-text-tertiary hover:text-nv-accent transition-all shrink-0"
-            title="Join voice"
-          >
-            <Phone size={10} />
-          </button>
+          isVoiceActive ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); leaveVoice(true); }}
+              className="w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 bg-nv-danger/10 hover:bg-nv-danger/20 text-nv-danger transition-all shrink-0"
+              title="Leave voice"
+            >
+              <PhoneOff size={10} />
+            </button>
+          ) : (
+            <button
+              onClick={(e) => handleQuickJoinVoice(e, channel)}
+              className="w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-nv-accent/20 text-nv-text-tertiary hover:text-nv-accent transition-all shrink-0"
+              title="Join voice"
+            >
+              <Phone size={10} />
+            </button>
+          )
         )}
 
         {isOwner && (

@@ -31,6 +31,7 @@ import RulesView from './RulesView';
 import CalendarView from './CalendarView';
 import TasksView from './TasksView';
 import ForumView from './ForumView';
+import AnnouncementsView from './AnnouncementsView';
 
 const CHANNEL_HEADER_ICONS = {
   text: Hash,
@@ -310,6 +311,9 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
   }
   if (isForum) {
     return <ForumView channel={activeChannel} serverId={activeView?.id} />;
+  }
+  if (isAnnouncements) {
+    return <AnnouncementsView channel={activeChannel} serverId={activeView?.id} />;
   }
 
   // Voice channel view

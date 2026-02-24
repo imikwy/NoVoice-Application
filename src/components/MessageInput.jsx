@@ -14,6 +14,7 @@ import {
   Film,
   Video,
   X,
+  CaseSensitive,
 } from 'lucide-react';
 import { useSocket } from '../context/SocketContext';
 import { useApp } from '../context/AppContext';
@@ -25,6 +26,14 @@ const MARKERS = {
   strike: { open: '~~',    close: '~~'    },
   code:   { open: '```\n', close: '\n```' },
 };
+
+// ── Font sizes ─────────────────────────────────────────────────────────────────
+const FONT_SIZES = [
+  { id: 'xl', label: 'Huge',   previewCls: 'text-xl font-semibold'  },
+  { id: 'lg', label: 'Large',  previewCls: 'text-base font-medium'  },
+  { id: 'md', label: 'Normal', previewCls: 'text-sm'                },
+  { id: 'sm', label: 'Small',  previewCls: 'text-[11px]'            },
+];
 
 // ── Preset text colors ─────────────────────────────────────────────────────────
 const PRESET_COLORS = [
@@ -82,6 +91,10 @@ export default function MessageInput({ onSend, placeholder, channelId, isDM, tar
   const [formatOpen, setFormatOpen] = useState(new Set());
   const [activeColor, setActiveColor] = useState(null);
 
+  // Font size
+  const [activeSize, setActiveSize] = useState(null); // 'sm'|'lg'|'xl'|null
+  const [showSizeMenu, setShowSizeMenu] = useState(false);
+
   // Popup visibility
   const [showEmoji, setShowEmoji] = useState(false);
   const [showColors, setShowColors] = useState(false);
@@ -112,6 +125,7 @@ export default function MessageInput({ onSend, placeholder, channelId, isDM, tar
   const colorsRef = useRef(null);
   const linkRef = useRef(null);
   const mediaRef = useRef(null);
+  const sizeRef = useRef(null);
 
   // Hidden file inputs
   const imageInputRef = useRef(null);
@@ -142,10 +156,13 @@ export default function MessageInput({ onSend, placeholder, channelId, isDM, tar
       if (showMediaMenu && mediaRef.current && !mediaRef.current.contains(e.target)) {
         setShowMediaMenu(false);
       }
+      if (showSizeMenu && sizeRef.current && !sizeRef.current.contains(e.target)) {
+        setShowSizeMenu(false);
+      }
     };
     document.addEventListener('mousedown', handler, true);
     return () => document.removeEventListener('mousedown', handler, true);
-  }, [showEmoji, showColors, showLinkDialog, showMediaMenu]);
+  }, [showEmoji, showColors, showLinkDialog, showMediaMenu, showSizeMenu]);
 
   // ── Insert text at cursor position ────────────────────────────────────────
   const insertAtCursor = useCallback((text) => {
@@ -198,6 +215,27 @@ export default function MessageInput({ onSend, placeholder, channelId, isDM, tar
     insertAtCursor('{/c}');
     setActiveColor(null);
   }, [activeColor, insertAtCursor]);
+
+  // ── Font size ───────────────────────────────────────────────────────────────
+  const applySize = useCallback((id) => {
+    if (activeSize) {
+      insertAtCursor('{/fs}');
+      if (id === activeSize || id === 'md') { setActiveSize(null); setShowSizeMenu(false); return; }
+    }
+    if (id !== 'md') {
+      insertAtCursor(`{fs:${id}}`);
+      setActiveSize(id);
+    } else {
+      setActiveSize(null);
+    }
+    setShowSizeMenu(false);
+  }, [activeSize, insertAtCursor]);
+
+  const closeSize = useCallback(() => {
+    if (!activeSize) return;
+    insertAtCursor('{/fs}');
+    setActiveSize(null);
+  }, [activeSize, insertAtCursor]);
 
   // ── Link ───────────────────────────────────────────────────────────────────
   const insertLink = useCallback(() => {
@@ -300,11 +338,13 @@ export default function MessageInput({ onSend, placeholder, channelId, isDM, tar
     if (formatOpen.has('under'))  finalValue += '</u>';
     if (formatOpen.has('strike')) finalValue += '~~';
     if (activeColor)              finalValue += '{/c}';
+    if (activeSize)               finalValue += '{/fs}';
 
     onSend(finalValue.trim());
     setValue('');
     setFormatOpen(new Set());
     setActiveColor(null);
+    setActiveSize(null);
 
     typingRef.current = false;
     clearTimeout(typingTimeoutRef.current);
@@ -436,6 +476,56 @@ export default function MessageInput({ onSend, placeholder, channelId, isDM, tar
               <Icon size={13} />
             </button>
           ))}
+
+          {/* Font size button */}
+          <div className="relative" ref={sizeRef}>
+            <button
+              type="button"
+              onClick={() => {
+                setShowEmoji(false); setShowColors(false); setShowLinkDialog(false); setShowMediaMenu(false);
+                setShowSizeMenu((p) => !p);
+              }}
+              title="Font size"
+              className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
+                activeSize || showSizeMenu
+                  ? 'bg-nv-accent/20 text-nv-accent'
+                  : 'text-nv-text-tertiary hover:text-nv-text-primary hover:bg-white/[0.06]'
+              }`}
+            >
+              <CaseSensitive size={14} />
+            </button>
+
+            <AnimatePresence>
+              {showSizeMenu && (
+                <motion.div
+                  initial={{ opacity: 0, y: 4, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                  transition={{ duration: 0.12 }}
+                  className="absolute bottom-full left-0 mb-2 z-50 w-36 rounded-2xl bg-nv-channels border border-white/[0.08] shadow-2xl overflow-hidden py-1"
+                >
+                  {FONT_SIZES.map(({ id, label, previewCls }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => applySize(id)}
+                      className={`w-full flex items-center gap-2.5 px-3 py-1.5 transition-colors text-left ${
+                        (activeSize === id || (!activeSize && id === 'md'))
+                          ? 'bg-nv-accent/10 text-nv-accent'
+                          : 'hover:bg-white/[0.06] text-nv-text-primary'
+                      }`}
+                    >
+                      <span className={`${previewCls} leading-none w-6 text-center shrink-0`}>A</span>
+                      <span className="text-xs text-nv-text-secondary">{label}</span>
+                      {(activeSize === id || (!activeSize && id === 'md')) && (
+                        <span className="ml-auto w-1.5 h-1.5 rounded-full bg-nv-accent shrink-0" />
+                      )}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
 
           {/* Divider */}
           <div className="w-px h-4 bg-white/[0.08] mx-0.5" />

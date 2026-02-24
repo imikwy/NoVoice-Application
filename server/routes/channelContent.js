@@ -311,6 +311,68 @@ router.delete('/calendar/:channelId/:eventId', authenticateToken, (req, res) => 
   }
 });
 
+// ── Announcements ──────────────────────────────────────────────────────────
+
+router.get('/announcements/:channelId', authenticateToken, (req, res) => {
+  try {
+    const channel = getChannelForMember(req.params.channelId, req.user.id, res);
+    if (!channel) return;
+    const announcements = getDb()
+      .prepare(`
+        SELECT a.*, u.username as creator_username, u.display_name as creator_display_name
+        FROM announcements a
+        LEFT JOIN users u ON a.created_by = u.id
+        WHERE a.channel_id = ?
+        ORDER BY a.created_at DESC
+      `)
+      .all(channel.id);
+    res.json({ announcements });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/announcements/:channelId', authenticateToken, (req, res) => {
+  try {
+    const channel = getChannelForMember(req.params.channelId, req.user.id, res);
+    if (!channel) return;
+    if (!requireOwner(channel.server_id, req.user.id, res)) return;
+    const { title, content } = req.body;
+    if (!title?.trim()) {
+      return res.status(400).json({ error: 'Title is required' });
+    }
+    const { v4: uuidv4 } = require('uuid');
+    const id = uuidv4();
+    getDb().prepare(`
+      INSERT INTO announcements (id, channel_id, title, content, created_by)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(id, channel.id, title.trim(), content || '', req.user.id);
+    const announcement = getDb().prepare(`
+      SELECT a.*, u.username as creator_username, u.display_name as creator_display_name
+      FROM announcements a LEFT JOIN users u ON a.created_by = u.id
+      WHERE a.id = ?
+    `).get(id);
+    emitChannelUpdated(req, channel.id);
+    res.status(201).json({ announcement });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.delete('/announcements/:channelId/:announcementId', authenticateToken, (req, res) => {
+  try {
+    const channel = getChannelForMember(req.params.channelId, req.user.id, res);
+    if (!channel) return;
+    if (!requireOwner(channel.server_id, req.user.id, res)) return;
+    getDb().prepare('DELETE FROM announcements WHERE id = ? AND channel_id = ?')
+      .run(req.params.announcementId, channel.id);
+    emitChannelUpdated(req, channel.id);
+    res.json({ message: 'Announcement deleted' });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── Tasks ──────────────────────────────────────────────────────────────────
 
 router.get('/tasks/:channelId', authenticateToken, (req, res) => {
