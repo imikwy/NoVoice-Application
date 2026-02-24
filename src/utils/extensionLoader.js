@@ -81,6 +81,22 @@ export async function loadExtensionComponent(appId) {
   // Ensure React is on window (bundles reference window.React)
   window.React = React;
 
+  // Pre-define window.NoVoiceApp as a configurable + writable property so
+  // the IIFE can overwrite it AND we can safely clear it afterwards.
+  // Without this, some environments make the property non-configurable after
+  // the first IIFE run, causing `delete window.NoVoiceApp` to throw on reload.
+  try {
+    Object.defineProperty(window, 'NoVoiceApp', {
+      value: undefined,
+      configurable: true,
+      writable: true,
+      enumerable: false,
+    });
+  } catch {
+    // Already defined — just reset the value
+    window.NoVoiceApp = undefined;
+  }
+
   return new Promise((resolve, reject) => {
     try {
       const script = document.createElement('script');
@@ -93,7 +109,8 @@ export async function loadExtensionComponent(appId) {
 
     // After IIFE execution, window.NoVoiceApp holds the exported component
     const exported = window.NoVoiceApp;
-    delete window.NoVoiceApp;
+    // Clear the slot — use try/catch in case the environment still blocks delete
+    try { delete window.NoVoiceApp; } catch { window.NoVoiceApp = undefined; }
 
     if (!exported) {
       return reject(
