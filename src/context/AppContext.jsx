@@ -5,20 +5,43 @@ import { useAuth } from './AuthContext';
 import { useSocket } from './SocketContext';
 import { getDefaultPinnedIds, getAppById, APP_REGISTRY } from '../apps/registry';
 import { loadExtensionComponent } from '../utils/extensionLoader';
+import { loadConversation, appendMessage } from '../utils/dmStorage';
 
 const PINNED_APPS_KEY = 'nv_pinned_apps';
+const UNPINNED_APPS_KEY = 'nv_unpinned_apps';   // explicit unpin blocklist
+const HIDDEN_SECTIONS_KEY = 'nv_hidden_sections'; // sidebar category visibility
 
 function loadPinnedAppIds() {
   try {
-    const raw = localStorage.getItem(PINNED_APPS_KEY);
     const defaults = getDefaultPinnedIds();
-    if (!raw) return defaults;
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return defaults;
-    // Always include defaultPinned apps; merge with user's saved list
-    return [...new Set([...defaults, ...parsed.filter((id) => typeof id === 'string')])];
+    const rawPinned = localStorage.getItem(PINNED_APPS_KEY);
+    const rawUnpinned = localStorage.getItem(UNPINNED_APPS_KEY);
+
+    const savedPinned = rawPinned ? JSON.parse(rawPinned) : null;
+    const explicitUnpin = rawUnpinned ? new Set(JSON.parse(rawUnpinned)) : new Set();
+
+    // Start with defaults that were NOT explicitly unpinned
+    const base = defaults.filter((id) => !explicitUnpin.has(id));
+
+    if (!savedPinned || !Array.isArray(savedPinned)) return base;
+    // Merge saved user pins (minus anything in the unpin blocklist)
+    return [...new Set([
+      ...base,
+      ...savedPinned.filter((id) => typeof id === 'string' && !explicitUnpin.has(id)),
+    ])];
   } catch {
     return getDefaultPinnedIds();
+  }
+}
+
+function loadHiddenSections() {
+  try {
+    const raw = localStorage.getItem(HIDDEN_SECTIONS_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? new Set(parsed) : new Set();
+  } catch {
+    return new Set();
   }
 }
 
@@ -48,6 +71,8 @@ export function AppProvider({ children }) {
 
   // App Store — pinned app ids (built-in apps)
   const [pinnedAppIds, setPinnedAppIds] = useState(() => loadPinnedAppIds());
+  // Sidebar category visibility
+  const [hiddenSections, setHiddenSections] = useState(() => loadHiddenSections());
 
   // Community extensions — installed on disk (manifests loaded via IPC)
   const [installedExtensions, setInstalledExtensions] = useState([]);
@@ -67,7 +92,7 @@ export function AppProvider({ children }) {
     if (!window.electronAPI?.extensions) return;
     window.electronAPI.extensions.list().then((manifests) => {
       setInstalledExtensions(Array.isArray(manifests) ? manifests : []);
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
 
   // Tear down own-server socket when user logs out
@@ -178,6 +203,9 @@ export function AppProvider({ children }) {
       const friendId =
         message.sender_id === user?.id ? message.receiver_id : message.sender_id;
 
+      // Persist to local storage so history survives restarts
+      appendMessage(user?.id, friendId, message);
+
       setDmMessages((prev) => {
         const existing = prev[friendId] || [];
         if (existing.some((m) => m.id === message.id)) return prev;
@@ -244,7 +272,7 @@ export function AppProvider({ children }) {
       setActiveServerApi(serverApi);
 
       if (serverObj?.server_url &&
-          (serverObj.server_type === 'own' || serverObj.server_type === 'local')) {
+        (serverObj.server_type === 'own' || serverObj.server_type === 'local')) {
         connectToOwnServer(serverObj);
       } else {
         disconnectOwnServer();
@@ -288,8 +316,26 @@ export function AppProvider({ children }) {
     });
   }, []);
 
+  // Seed in-memory store from localStorage for a conversation (called when opening a DM)
+  const loadDMHistory = useCallback((friendId) => {
+    if (!user?.id || !friendId) return;
+    setDmMessages((prev) => {
+      // Don't overwrite if we already have messages in memory
+      if (prev[friendId]?.length > 0) return prev;
+      const history = loadConversation(user.id, friendId);
+      if (!history.length) return prev;
+      return { ...prev, [friendId]: history };
+    });
+  }, [user?.id]);
+
   const pinApp = useCallback((id) => {
     if (!getAppById(id)) return;
+    // Remove from unpin blocklist
+    const rawUnpinned = localStorage.getItem(UNPINNED_APPS_KEY);
+    const unpinned = rawUnpinned ? JSON.parse(rawUnpinned) : [];
+    const newUnpinned = unpinned.filter((i) => i !== id);
+    localStorage.setItem(UNPINNED_APPS_KEY, JSON.stringify(newUnpinned));
+
     setPinnedAppIds((prev) => {
       if (prev.includes(id)) return prev;
       const next = [...prev, id];
@@ -299,6 +345,13 @@ export function AppProvider({ children }) {
   }, []);
 
   const unpinApp = useCallback((id) => {
+    // Add to unpin blocklist so defaultPinned apps stay unpinned after restart
+    const rawUnpinned = localStorage.getItem(UNPINNED_APPS_KEY);
+    const unpinned = rawUnpinned ? JSON.parse(rawUnpinned) : [];
+    if (!unpinned.includes(id)) {
+      localStorage.setItem(UNPINNED_APPS_KEY, JSON.stringify([...unpinned, id]));
+    }
+
     setPinnedAppIds((prev) => {
       const next = prev.filter((i) => i !== id);
       localStorage.setItem(PINNED_APPS_KEY, JSON.stringify(next));
@@ -307,6 +360,25 @@ export function AppProvider({ children }) {
   }, []);
 
   const isPinnedApp = useCallback((id) => pinnedAppIds.includes(id), [pinnedAppIds]);
+
+  // Sidebar section visibility
+  const hideSection = useCallback((key) => {
+    setHiddenSections((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      localStorage.setItem(HIDDEN_SECTIONS_KEY, JSON.stringify([...next]));
+      return next;
+    });
+  }, []);
+
+  const showSection = useCallback((key) => {
+    setHiddenSections((prev) => {
+      const next = new Set(prev);
+      next.delete(key);
+      localStorage.setItem(HIDDEN_SECTIONS_KEY, JSON.stringify([...next]));
+      return next;
+    });
+  }, []);
 
   // Pinned apps in registry order
   const pinnedApps = APP_REGISTRY.filter((app) => pinnedAppIds.includes(app.id));
@@ -375,12 +447,17 @@ export function AppProvider({ children }) {
         // DM in-memory store
         dmMessages,
         addDMMessage,
+        loadDMHistory,
         // App Store
         pinnedAppIds,
         pinnedApps,
         pinApp,
         unpinApp,
         isPinnedApp,
+        // Sidebar section visibility
+        hiddenSections,
+        hideSection,
+        showSection,
         // Community extensions
         installedExtensions,
         isInstalledExtension,

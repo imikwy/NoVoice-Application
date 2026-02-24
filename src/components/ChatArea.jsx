@@ -85,7 +85,7 @@ function deviceSubLabel(device) {
 
 export default function ChatArea({ onToggleMembers, showMembers }) {
   const { user } = useAuth();
-  const { activeView, activeChannel, serverDetails, onlineUsers, activeServerApi, ownSocket, dmMessages } = useApp();
+  const { activeView, activeChannel, serverDetails, onlineUsers, activeServerApi, ownSocket, dmMessages, loadDMHistory } = useApp();
   const { socket } = useSocket();
   const {
     activeVoiceChannelId,
@@ -151,6 +151,10 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
   const voiceControlsRef = useRef(null);
 
   const isDM = activeView?.type === 'friend';
+
+  // DMs come from AppContext in-memory store; channel messages from local state
+  const currentMessages = isDM ? (dmMessages[activeView?.id] || []) : messages;
+
   const isVoice = activeChannel?.type === 'voice';
   const isRules = activeChannel?.type === 'rules';
   const isCalendar = activeChannel?.type === 'calendar';
@@ -172,8 +176,9 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
 
   const loadMessages = useCallback(
     async (showLoader = false) => {
-      // DMs come from AppContext in-memory store — no API call needed
+      // DMs come from AppContext in-memory store — seed from local storage if needed
       if (isDM) {
+        loadDMHistory(activeView?.id);
         if (showLoader) setLoading(false);
         return;
       }
@@ -203,7 +208,7 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
         }
       }
     },
-    [isDM, activeChannel?.id, isVoice, activeConversationKey, activeServerApi]
+    [isDM, activeChannel?.id, isVoice, activeConversationKey, activeServerApi, activeView?.id, loadDMHistory]
   );
 
   useEffect(() => {
@@ -258,10 +263,10 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
     socket.emit('voice:state:request', { channelId: activeChannel.id });
   }, [socket, isVoice, activeChannel?.id]);
 
-  // Auto-scroll
+  // Auto-scroll — watches both channel messages and DMs
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [currentMessages]);
 
   const handleSend = useCallback(
     (content) => {
@@ -309,9 +314,6 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
   useEffect(() => {
     if (!showOutputMenu) setShowOutputDeviceList(false);
   }, [showOutputMenu]);
-
-  // DMs come from AppContext in-memory store; channel messages from local state
-  const currentMessages = isDM ? (dmMessages[activeView?.id] || []) : messages;
 
   const serverObj = serverDetails[activeView?.id]?.server;
   const isOwner = serverObj?.owner_id === user?.id;

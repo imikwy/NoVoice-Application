@@ -434,6 +434,15 @@ export default function MessageInput({ onSend, placeholder, channelId, isDM, tar
             handleTyping();
           }}
           onKeyDown={handleKeyDown}
+          onPaste={(e) => {
+            const items = Array.from(e.clipboardData?.items || []);
+            const imageItem = items.find((item) => item.type.startsWith('image/'));
+            if (imageItem) {
+              e.preventDefault();
+              const file = imageItem.getAsFile();
+              if (file) handleFileUpload(file, 'image');
+            }
+          }}
           placeholder={placeholder}
           rows={1}
           disabled={uploading}
