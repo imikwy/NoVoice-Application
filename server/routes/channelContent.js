@@ -337,16 +337,15 @@ router.post('/announcements/:channelId', authenticateToken, (req, res) => {
     const channel = getChannelForMember(req.params.channelId, req.user.id, res);
     if (!channel) return;
     if (!requireOwner(channel.server_id, req.user.id, res)) return;
-    const { title, content } = req.body;
-    if (!title?.trim()) {
-      return res.status(400).json({ error: 'Title is required' });
+    const { content } = req.body;
+    if (!content?.trim()) {
+      return res.status(400).json({ error: 'Content is required' });
     }
-    const { v4: uuidv4 } = require('uuid');
     const id = uuidv4();
     getDb().prepare(`
       INSERT INTO announcements (id, channel_id, title, content, created_by)
       VALUES (?, ?, ?, ?, ?)
-    `).run(id, channel.id, title.trim(), content || '', req.user.id);
+    `).run(id, channel.id, '', content.trim(), req.user.id);
     const announcement = getDb().prepare(`
       SELECT a.*, u.username as creator_username, u.display_name as creator_display_name
       FROM announcements a LEFT JOIN users u ON a.created_by = u.id

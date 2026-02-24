@@ -15,6 +15,21 @@ function formatTimestamp(iso) {
   });
 }
 
+function formatDateOnly(iso) {
+  return new Date(iso).toLocaleDateString([], {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
+}
+
+function isSameDay(a, b) {
+  const da = new Date(a), db = new Date(b);
+  return (
+    da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
+  );
+}
+
 // ── Mini format toolbar (same markers as MessageInput) ────────────────────────
 const MARKERS = {
   bold:   { open: '**',    close: '**'    },
@@ -43,7 +58,6 @@ function MiniFormatBar({ textareaRef, value, setValue }) {
   const colorRef = useRef(null);
   const sizeRef  = useRef(null);
 
-  // close popups on outside click
   useEffect(() => {
     const h = (e) => {
       if (showColors && colorRef.current && !colorRef.current.contains(e.target)) setShowColors(false);
@@ -179,14 +193,13 @@ function MiniFormatBar({ textareaRef, value, setValue }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function AnnouncementsView({ channel, serverId }) {
-  const { activeServerApi, serverDetails } = useApp();
+  const { activeServerApi, serverDetails, ownSocket } = useApp();
   const { user } = useAuth();
   const { socket } = useSocket();
 
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading]             = useState(true);
   const [showCreate, setShowCreate]       = useState(false);
-  const [title, setTitle]                 = useState('');
   const [content, setContent]             = useState('');
   const [submitting, setSubmitting]       = useState(false);
   const [deletingId, setDeletingId]       = useState(null);
@@ -215,28 +228,43 @@ export default function AnnouncementsView({ channel, serverId }) {
 
   useEffect(() => { load(); }, [load]);
 
-  // Live reload on channel:updated
+  // Subscribe to channel room + listen for updates on both sockets
   useEffect(() => {
-    if (!socket) return;
-    const h = (data) => { if (data?.channelId === channel?.id) load(); };
-    socket.on('channel:updated', h);
-    return () => socket.off('channel:updated', h);
-  }, [socket, channel?.id, load]);
+    if (!channel?.id) return;
+    const h = (data) => { if (data?.channelId === channel.id) load(); };
+
+    socket?.emit('channel:subscribe', { channelId: channel.id });
+    socket?.on('channel:updated', h);
+    ownSocket?.on('channel:updated', h);
+
+    return () => {
+      socket?.off('channel:updated', h);
+      socket?.emit('channel:unsubscribe', { channelId: channel.id });
+      ownSocket?.off('channel:updated', h);
+    };
+  }, [socket, ownSocket, channel?.id, load]);
 
   const handleCreate = async () => {
-    if (!title.trim() || submitting) return;
+    if (!content.trim() || submitting) return;
     setSubmitting(true);
     try {
-      await activeServerApi.createAnnouncement(channel.id, { title: title.trim(), content });
-      setTitle(''); setContent(''); setShowCreate(false);
+      const result = await activeServerApi.createAnnouncement(channel.id, { content: content.trim() });
+      // Optimistically prepend; real-time will reconcile if needed
+      if (result?.announcement) {
+        setAnnouncements(prev => [result.announcement, ...prev]);
+      }
+      setContent('');
+      setShowCreate(false);
     } catch { /* ignore */ }
     finally { setSubmitting(false); }
   };
 
   const handleDelete = async (id) => {
     setDeletingId(id);
-    try { await activeServerApi.deleteAnnouncement(channel.id, id); }
-    catch { /* ignore */ }
+    try {
+      await activeServerApi.deleteAnnouncement(channel.id, id);
+      setAnnouncements(prev => prev.filter(a => a.id !== id));
+    } catch { /* ignore */ }
     finally { setDeletingId(null); }
   };
 
@@ -274,26 +302,16 @@ export default function AnnouncementsView({ channel, serverId }) {
             className="overflow-hidden shrink-0"
           >
             <div className="mx-4 mt-4 rounded-2xl bg-nv-surface/40 border border-white/[0.07]">
-              {/* Title */}
-              <input
-                type="text"
-                value={title}
-                onChange={e => setTitle(e.target.value)}
-                placeholder="Announcement title…"
-                className="w-full bg-transparent text-sm font-semibold text-nv-text-primary placeholder-nv-text-tertiary px-3.5 pt-3 pb-2 focus:outline-none"
-                onKeyDown={e => e.key === 'Escape' && setShowCreate(false)}
-              />
-              <div className="mx-3.5 h-px bg-white/[0.05]" />
-
-              {/* Content textarea with format bar */}
+              {/* Content textarea */}
               <textarea
                 ref={contentRef}
                 value={content}
                 onChange={e => setContent(e.target.value)}
-                placeholder="Write your announcement… (supports formatting)"
+                placeholder="Write your announcement… (use formatting to add headers, bold text, colors, etc.)"
                 rows={3}
-                className="w-full bg-transparent text-sm text-nv-text-primary placeholder-nv-text-tertiary resize-none focus:outline-none leading-relaxed px-3.5 py-2.5"
+                className="w-full bg-transparent text-sm text-nv-text-primary placeholder-nv-text-tertiary resize-none focus:outline-none leading-relaxed px-3.5 pt-3 pb-2"
                 style={{ minHeight: '72px', maxHeight: '280px' }}
+                onKeyDown={e => e.key === 'Escape' && setShowCreate(false)}
               />
 
               {/* Format bar */}
@@ -302,7 +320,7 @@ export default function AnnouncementsView({ channel, serverId }) {
               {/* Footer */}
               <div className="flex items-center justify-end gap-2 px-3 pb-3 pt-1">
                 <button
-                  onClick={() => { setShowCreate(false); setTitle(''); setContent(''); }}
+                  onClick={() => { setShowCreate(false); setContent(''); }}
                   className="px-3 py-1.5 rounded-lg text-xs text-nv-text-tertiary hover:text-nv-text-primary transition-colors"
                 >
                   Cancel
@@ -310,7 +328,7 @@ export default function AnnouncementsView({ channel, serverId }) {
                 <motion.button
                   whileTap={{ scale: 0.97 }}
                   onClick={handleCreate}
-                  disabled={!title.trim() || submitting}
+                  disabled={!content.trim() || submitting}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-nv-accent/20 text-nv-accent hover:bg-nv-accent/30 transition-all disabled:opacity-40"
                 >
                   <Send size={11} />
@@ -323,7 +341,7 @@ export default function AnnouncementsView({ channel, serverId }) {
       </AnimatePresence>
 
       {/* ── Announcement list ───────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+      <div className="flex-1 overflow-y-auto px-4 py-4">
 
         {loading && (
           <div className="flex items-center justify-center py-16">
@@ -344,53 +362,65 @@ export default function AnnouncementsView({ channel, serverId }) {
         )}
 
         <AnimatePresence initial={false}>
-          {announcements.map((a) => (
-            <motion.div
-              key={a.id}
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.97 }}
-              transition={{ duration: 0.18 }}
-              className="group rounded-2xl bg-nv-surface/30 border border-white/[0.06] hover:border-white/[0.1] transition-all overflow-hidden"
-            >
-              {/* Date/time header bar */}
-              <div className="flex items-center justify-between px-3.5 py-2 border-b border-white/[0.05] bg-white/[0.02]">
-                <span className="text-[11px] text-nv-text-tertiary">
-                  {formatTimestamp(a.created_at)}
-                </span>
-                <span className="text-[11px] text-nv-text-tertiary/70">
-                  {a.creator_display_name || a.creator_username || 'Unknown'}
-                </span>
-              </div>
+          {announcements.map((a, idx) => {
+            const prevDate = idx > 0 ? announcements[idx - 1].created_at : null;
+            const showDateSep = idx > 0 && !isSameDay(prevDate, a.created_at);
 
-              {/* Content */}
-              <div className="px-3.5 py-3">
-                {/* Title */}
-                <div className="flex items-start justify-between gap-2 mb-1.5">
-                  <h3 className="text-sm font-semibold text-nv-text-primary leading-snug">
-                    {a.title}
-                  </h3>
-                  {isOwner && (
-                    <button
-                      onClick={() => handleDelete(a.id)}
-                      disabled={deletingId === a.id}
-                      className="opacity-0 group-hover:opacity-100 w-6 h-6 rounded-lg flex items-center justify-center text-nv-text-tertiary hover:text-nv-danger hover:bg-nv-danger/10 transition-all shrink-0 disabled:opacity-30"
-                      title="Delete announcement"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  )}
-                </div>
-
-                {/* Body */}
-                {a.content && (
-                  <div className="text-nv-text-secondary/90">
-                    <MessageContent content={a.content} />
-                  </div>
+            return (
+              <motion.div key={a.id}>
+                {/* Separator between announcements */}
+                {idx > 0 && (
+                  showDateSep ? (
+                    // Date divider between different days
+                    <div className="flex items-center gap-3 my-5">
+                      <div className="flex-1 h-px bg-white/[0.05]" />
+                      <span className="text-[10px] text-nv-text-tertiary/60 px-1 shrink-0">
+                        {formatDateOnly(a.created_at)}
+                      </span>
+                      <div className="flex-1 h-px bg-white/[0.05]" />
+                    </div>
+                  ) : (
+                    // Simple line separator within the same day
+                    <div className="h-px bg-white/[0.05] my-4" />
+                  )
                 )}
-              </div>
-            </motion.div>
-          ))}
+
+                {/* Announcement */}
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.97 }}
+                  transition={{ duration: 0.18 }}
+                  className="group"
+                >
+                  {/* Timestamp + author + delete */}
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] text-nv-text-tertiary">
+                      {formatTimestamp(a.created_at)}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-nv-text-tertiary/70">
+                        {a.creator_display_name || a.creator_username || 'Unknown'}
+                      </span>
+                      {isOwner && (
+                        <button
+                          onClick={() => handleDelete(a.id)}
+                          disabled={deletingId === a.id}
+                          className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-md flex items-center justify-center text-nv-text-tertiary hover:text-nv-danger hover:bg-nv-danger/10 transition-all shrink-0 disabled:opacity-30"
+                          title="Delete announcement"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Body with full formatting */}
+                  <MessageContent content={a.content} />
+                </motion.div>
+              </motion.div>
+            );
+          })}
         </AnimatePresence>
       </div>
     </div>
