@@ -861,8 +861,8 @@ router.post('/tasks/:channelId/import', authenticateToken, (req, res) => {
       const catId = uuidv4();
       const catName = String(cat.name || 'Tasks').trim().slice(0, 100);
       db.prepare(
-        'INSERT INTO task_categories (id, channel_id, name, position) VALUES (?, ?, ?, ?)'
-      ).run(catId, channel.id, catName, catPos++);
+        'INSERT INTO task_categories (id, channel_id, name, position, created_by) VALUES (?, ?, ?, ?, ?)'
+      ).run(catId, channel.id, catName, catPos++, req.user.id);
 
       let itemPos = 0;
       for (const task of Array.isArray(cat.tasks) ? cat.tasks : []) {
