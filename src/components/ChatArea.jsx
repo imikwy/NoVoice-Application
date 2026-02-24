@@ -263,10 +263,25 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
     socket.emit('voice:state:request', { channelId: activeChannel.id });
   }, [socket, isVoice, activeChannel?.id]);
 
-  // Auto-scroll — watches both channel messages and DMs
+  // Auto-scroll — only when already near the bottom, or when conversation changes
+  const prevConversationKeyRef = useRef(activeConversationKey);
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [currentMessages]);
+    const container = containerRef.current;
+    const conversationChanged = prevConversationKeyRef.current !== activeConversationKey;
+    prevConversationKeyRef.current = activeConversationKey;
+
+    if (conversationChanged) {
+      // Always jump to bottom instantly on conversation switch
+      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+      return;
+    }
+
+    if (!container) return;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (distanceFromBottom <= 150) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [currentMessages, activeConversationKey]);
 
   const handleSend = useCallback(
     (content) => {
