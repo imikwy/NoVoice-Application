@@ -1,7 +1,7 @@
 {
   "name": "novoice",
   "author": "ikwy",
-  "version": "0.7.10",
+  "version": "0.7.11",
   "description": "NoVoice",
   "main": "electron/main.js",
   "scripts": {
