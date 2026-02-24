@@ -38,4 +38,23 @@ router.get('/', (_req, res) => {
   }
 });
 
+// GET /api/app-store/debug — temporary diagnostic endpoint
+// Shows the resolved path, whether the file exists, and its raw content.
+// Remove this route once the registry is confirmed working.
+router.get('/debug', (_req, res) => {
+  const exists = fs.existsSync(REGISTRY_PATH);
+  let raw = null;
+  let parsed = null;
+  let parseError = null;
+  if (exists) {
+    try {
+      raw = fs.readFileSync(REGISTRY_PATH, 'utf-8');
+      parsed = JSON.parse(raw);
+    } catch (err) {
+      parseError = err.message;
+    }
+  }
+  res.json({ resolvedPath: REGISTRY_PATH, exists, raw, parsed, parseError });
+});
+
 module.exports = router;
