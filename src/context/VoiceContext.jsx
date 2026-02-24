@@ -1159,22 +1159,33 @@ export function VoiceProvider({ children }) {
       try {
         await refreshIceConfiguration(true);
 
+        // Try to acquire microphone — fall back to listen-only if no device is available
+        let stream = null;
+        let listenOnly = false;
+
         if (!navigator.mediaDevices?.getUserMedia) {
-          throw new Error('Microphone access is not supported in this environment.');
+          listenOnly = true;
+        } else {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              audio: getAudioConstraint(selectedInputDeviceId),
+              video: false,
+            });
+          } catch (err) {
+            const deviceErrors = ['NotFoundError', 'DevicesNotFoundError', 'NotReadableError', 'OverconstrainedError'];
+            if (!deviceErrors.includes(err?.name)) throw err; // re-throw permission denied etc.
+            listenOnly = true;
+          }
         }
 
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: getAudioConstraint(selectedInputDeviceId),
-          video: false,
-        });
-
-        await applyTrackConstraints(stream);
-
-        microphoneStreamRef.current = stream;
-        const { stream: outgoingStream } = await buildOutgoingAudioStream(stream);
-        localStreamRef.current = outgoingStream;
-        stream.getAudioTracks().forEach((track) => { track.enabled = !effectiveSelfMuted; });
-        outgoingStream.getAudioTracks().forEach((track) => { track.enabled = !effectiveSelfMuted; });
+        if (!listenOnly && stream) {
+          await applyTrackConstraints(stream);
+          microphoneStreamRef.current = stream;
+          const { stream: outgoingStream } = await buildOutgoingAudioStream(stream);
+          localStreamRef.current = outgoingStream;
+          stream.getAudioTracks().forEach((track) => { track.enabled = !effectiveSelfMuted; });
+          outgoingStream.getAudioTracks().forEach((track) => { track.enabled = !effectiveSelfMuted; });
+        }
 
         joinedVoiceChannelRef.current = channelId;
         setActiveVoiceChannelId(channelId);
