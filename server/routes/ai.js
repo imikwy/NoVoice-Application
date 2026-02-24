@@ -3,7 +3,7 @@ const router = express.Router();
 const { authenticateToken } = require('../middleware/auth');
 
 const GEMINI_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 const SYSTEM_PROMPT = `You are a task extraction assistant. Extract a structured todo list from the provided content.
 
@@ -74,7 +74,7 @@ router.post('/import-tasks', authenticateToken, async (req, res) => {
       const errBody = await response.json().catch(() => ({}));
       console.error('[AI] Gemini error:', errBody);
       const detail = errBody?.error?.message || `HTTP ${response.status}`;
-      return res.status(502).json({ error: 'AI service error', detail });
+      return res.status(502).json({ error: `AI service error: ${detail}` });
     }
 
     const data = await response.json();
