@@ -161,6 +161,15 @@ function currentVoiceMusicTrack(session) {
   return session.queue[session.currentIndex] || null;
 }
 
+function findNextPlayableTrackIndex(session, startIndex = 0) {
+  if (!session || !Array.isArray(session.queue) || session.queue.length === 0) return -1;
+  const start = Math.max(0, Math.min(session.queue.length - 1, Number(startIndex) || 0));
+  for (let i = start; i < session.queue.length; i += 1) {
+    if (session.queue[i]?.is_playable) return i;
+  }
+  return -1;
+}
+
 function toVoiceMusicSnapshot(channelId) {
   const session = voiceMusicSessions.get(channelId);
   const nowMs = Date.now();
@@ -645,12 +654,12 @@ function setupWebSocket(io) {
           requestedByUserId: userId,
           requestedByName,
         }))
-        .filter(Boolean);
+        .filter((track) => Boolean(track?.is_playable));
 
       if (createdTracks.length === 0) {
         socket.emit('voice:music:error', {
           channelId: channel.id,
-          message: 'Link was recognized but no playable entries were found.',
+          message: 'No playable in-app preview found for this Spotify link.',
         });
         return;
       }
@@ -669,13 +678,37 @@ function setupWebSocket(io) {
 
     socket.on('voice:music:play', (data) => {
       withVoiceMusicControl(data?.channelId, (session, channel) => {
-        if (!currentVoiceMusicTrack(session)) {
+        let activeTrack = currentVoiceMusicTrack(session);
+        if (!activeTrack) {
           socket.emit('voice:music:error', {
             channelId: channel.id,
             message: 'Queue is empty.',
           });
           return false;
         }
+
+        if (!activeTrack.is_playable) {
+          const nextPlayableIndex = findNextPlayableTrackIndex(session, Math.max(0, session.currentIndex));
+          if (nextPlayableIndex < 0) {
+            socket.emit('voice:music:error', {
+              channelId: channel.id,
+              message: 'No playable tracks found in queue.',
+            });
+            return false;
+          }
+          if (nextPlayableIndex !== session.currentIndex) {
+            moveVoiceMusicTrack(session, nextPlayableIndex, userId, Date.now());
+          }
+          activeTrack = currentVoiceMusicTrack(session);
+          if (!activeTrack?.is_playable) {
+            socket.emit('voice:music:error', {
+              channelId: channel.id,
+              message: 'Selected track has no playable in-app stream.',
+            });
+            return false;
+          }
+        }
+
         if (session.playbackState === 'playing') return false;
         setVoiceMusicPlaybackState(session, 'playing', userId, Date.now());
         return true;
@@ -857,8 +890,9 @@ function setupWebSocket(io) {
       if (!activeTrack || activeTrack.id !== trackId) return;
 
       const nowMs = Date.now();
-      if (session.currentIndex + 1 < session.queue.length) {
-        moveVoiceMusicTrack(session, session.currentIndex + 1, userId, nowMs);
+      const nextPlayableIndex = findNextPlayableTrackIndex(session, session.currentIndex + 1);
+      if (nextPlayableIndex >= 0) {
+        moveVoiceMusicTrack(session, nextPlayableIndex, userId, nowMs);
       } else {
         session.playbackState = 'idle';
         session.basePositionSec = 0;

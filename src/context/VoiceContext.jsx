@@ -429,7 +429,9 @@ function RemoteAudio({ stream, muted, gain, outputDeviceId }) {
     audio.volume = clamp(gain, 0, 1);
 
     if (typeof audio.setSinkId === 'function' && outputDeviceId) {
-      audio.setSinkId(outputDeviceId).catch(() => {});
+      audio.setSinkId(outputDeviceId).catch(() => {
+        audio.setSinkId('default').catch(() => {});
+      });
     }
 
     audio.play().catch(() => {});
@@ -1982,7 +1984,9 @@ export function VoiceProvider({ children }) {
     audio.volume = clamp(outputVolume / 100, 0, 1);
 
     if (typeof audio.setSinkId === 'function' && selectedOutputDeviceId) {
-      audio.setSinkId(selectedOutputDeviceId).catch(() => {});
+      audio.setSinkId(selectedOutputDeviceId).catch(() => {
+        audio.setSinkId('default').catch(() => {});
+      });
     }
 
     const targetPositionSec = getVoiceMusicDerivedPosition(snapshot);
@@ -1995,7 +1999,10 @@ export function VoiceProvider({ children }) {
     }
 
     if (snapshot.playbackState === 'playing' && !deafened) {
-      audio.play().catch(() => {});
+      audio.play().catch((error) => {
+        const detail = String(error?.message || '').trim();
+        setVoiceMusicError(detail ? `Playback failed: ${detail}` : 'Playback failed on this device/output.');
+      });
       return;
     }
 

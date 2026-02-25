@@ -118,6 +118,9 @@ export default function VoiceMusicPanel({
               <p className="text-[11px] text-nv-text-tertiary truncate">
                 {currentTrack ? `${currentTrack.sourceLabel} - requested by ${currentTrack.requestedByName}` : 'Spotify tracks and playlists are resolved automatically.'}
               </p>
+              {currentTrack?.playbackHint === 'preview' && (
+                <p className="text-[10px] text-nv-accent/90 mt-0.5">Preview stream (about 30s)</p>
+              )}
             </div>
           </div>
           {hasTrack && !currentTrackPlayable && (

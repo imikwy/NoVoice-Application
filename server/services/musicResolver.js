@@ -156,9 +156,11 @@ function mapSpotifyTrackToResolved(track, fallbackUrl = null, fallbackImage = nu
     title,
     source: 'spotify',
     coverUrl,
-    durationSec: Number.isFinite(Number(track.duration_ms))
-      ? Number(track.duration_ms) / 1000
-      : null,
+    // Spotify preview endpoints are short snippets (~30s), not full-track streams.
+    // Keep UI/server timing honest so playback state doesn't pretend a full song is playing.
+    durationSec: previewUrl
+      ? 30
+      : (Number.isFinite(Number(track.duration_ms)) ? Number(track.duration_ms) / 1000 : null),
     streamUrl: previewUrl,
     isPlayable: Boolean(previewUrl),
     playbackHint: previewUrl ? 'preview' : 'external',
@@ -392,7 +394,7 @@ async function resolveDeezerPreviewForTrack(track) {
       streamUrl: cached.streamUrl,
       isPlayable: true,
       playbackHint: 'preview',
-      durationSec: track.durationSec ?? cached.durationSec ?? null,
+      durationSec: 30,
       coverUrl: track.coverUrl || cached.coverUrl || null,
     };
   }
@@ -425,7 +427,8 @@ async function resolveDeezerPreviewForTrack(track) {
     streamUrl: normalized.streamUrl,
     isPlayable: true,
     playbackHint: 'preview',
-    durationSec: track.durationSec ?? normalized.durationSec ?? null,
+    // Deezer preview URLs are also snippets (~30s), even if metadata contains full track length.
+    durationSec: 30,
     coverUrl: track.coverUrl || normalized.coverUrl || null,
   };
 }
