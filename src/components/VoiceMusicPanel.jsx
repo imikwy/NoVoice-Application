@@ -58,6 +58,7 @@ export default function VoiceMusicPanel({
   const playbackState = stateForChannel?.playbackState || 'idle';
   const queueCount = queue.length;
   const hasTrack = Boolean(currentTrack);
+  const currentTrackPlayable = Boolean(currentTrack?.isPlayable);
   const hasDuration = Number.isFinite(currentTrack?.durationSec) && currentTrack.durationSec > 0;
   const effectivePosition = Math.max(0, Number(musicPositionSec || stateForChannel?.positionSec || 0));
   const seekMax = hasDuration ? currentTrack.durationSec : Math.max(effectivePosition + 30, 240);
@@ -114,10 +115,15 @@ export default function VoiceMusicPanel({
                 {currentTrack?.title || 'Queue a track to start listening'}
               </p>
               <p className="text-[11px] text-nv-text-tertiary truncate">
-                {currentTrack ? `${currentTrack.sourceLabel} - requested by ${currentTrack.requestedByName}` : 'Direct audio links sync playback. Spotify/YouTube can be queued as shared links.'}
+                {currentTrack ? `${currentTrack.sourceLabel} - requested by ${currentTrack.requestedByName}` : 'Direct audio links sync playback. Spotify-Playlists/-Songs werden automatisch aufgelöst.'}
               </p>
             </div>
           </div>
+          {hasTrack && !currentTrackPlayable && (
+            <p className="text-[10px] text-nv-text-tertiary mt-2">
+              This source has no direct stream URL in-app. Queue stays synced and you can open the source link.
+            </p>
+          )}
 
           <div className="mt-3">
             <div className="h-1.5 w-full rounded-full bg-white/[0.08] overflow-hidden">
@@ -130,11 +136,11 @@ export default function VoiceMusicPanel({
           </div>
 
           <div className="mt-3 flex items-center gap-1.5">
-            {[
-              { key: 'previous', Icon: SkipBack, action: () => skipVoiceMusicPrevious(channelId) },
-              { key: 'toggle', Icon: playbackState === 'playing' ? Pause : Play, action: () => toggleVoiceMusicPlayback(channelId), primary: true },
-              { key: 'next', Icon: SkipForward, action: () => skipVoiceMusicNext(channelId) },
-            ].map(({ key, Icon, action, primary }) => (
+              {[
+                { key: 'previous', Icon: SkipBack, action: () => skipVoiceMusicPrevious(channelId) },
+                { key: 'toggle', Icon: playbackState === 'playing' ? Pause : Play, action: () => toggleVoiceMusicPlayback(channelId), primary: true },
+                { key: 'next', Icon: SkipForward, action: () => skipVoiceMusicNext(channelId) },
+              ].map(({ key, Icon, action, primary }) => (
               <button
                 key={key}
                 onClick={action}
@@ -157,7 +163,7 @@ export default function VoiceMusicPanel({
               step={1}
               value={Math.min(seekMax, effectivePosition)}
               onChange={(e) => seekVoiceMusic(channelId, Number(e.target.value))}
-              disabled={!canControl || !hasTrack}
+              disabled={!canControl || !hasTrack || !currentTrackPlayable}
               className="ml-1 flex-1 accent-[#34C759] disabled:opacity-50"
               title={hasDuration ? 'Seek track position' : 'Seeking works best when duration is known'}
             />
@@ -209,10 +215,21 @@ export default function VoiceMusicPanel({
                     <button
                       onClick={() => canControl && selectVoiceMusicTrack(channelId, track.id)}
                       disabled={!canControl}
-                      className="w-6 h-6 rounded-lg border border-white/[0.1] text-[10px] text-nv-text-tertiary shrink-0 disabled:opacity-50"
+                      className="w-9 h-9 rounded-lg border border-white/[0.1] text-[10px] text-nv-text-tertiary shrink-0 disabled:opacity-50 overflow-hidden relative bg-black/30"
                       title={canControl ? 'Switch to this track' : 'No control rights'}
                     >
-                      {index + 1}
+                      {track.coverUrl ? (
+                        <img src={track.coverUrl} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="absolute inset-0 flex items-center justify-center">
+                          {index + 1}
+                        </span>
+                      )}
+                      {track.coverUrl && (
+                        <span className="absolute left-1 top-1 px-1 rounded bg-black/60 text-[9px] text-white/90">
+                          {index + 1}
+                        </span>
+                      )}
                     </button>
 
                     <div className="min-w-0 flex-1">

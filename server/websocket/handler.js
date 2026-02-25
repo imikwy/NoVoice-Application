@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const { getDb } = require('../database/init');
 const { JWT_SECRET } = require('../middleware/auth');
+const { resolveMusicInputUrl } = require('../services/musicResolver');
 
 const onlineUsers = new Map(); // userId -> Set of socket ids
 const voiceChannelMembers = new Map(); // channelId -> Map<userId, user summary>
@@ -74,7 +75,19 @@ function sourceLabel(source) {
   return 'Audio Link';
 }
 
-function createVoiceMusicTrack({ url, title, requestedByUserId, requestedByName, coverUrl, durationSec }) {
+function createVoiceMusicTrack({
+  url,
+  title,
+  requestedByUserId,
+  requestedByName,
+  coverUrl,
+  durationSec,
+  source,
+  sourceLabelOverride,
+  streamUrl,
+  isPlayable,
+  playbackHint,
+}) {
   let parsed;
   try {
     parsed = new URL(String(url || '').trim());
@@ -84,22 +97,44 @@ function createVoiceMusicTrack({ url, title, requestedByUserId, requestedByName,
 
   if (!['http:', 'https:'].includes(parsed.protocol)) return null;
 
-  const source = inferMusicSource(parsed);
+  const inferredSource = source || inferMusicSource(parsed);
   const normalizedTitle = normalizeLabel(title, inferTrackTitle(parsed));
   const normalizedCover = normalizeLabel(coverUrl, '', 500);
-  const normalizedDuration = Number.isFinite(Number(durationSec)) ? clampMusicSeconds(durationSec) : null;
+  const normalizedDuration = durationSec === null || durationSec === undefined || durationSec === ''
+    ? null
+    : (Number.isFinite(Number(durationSec)) ? clampMusicSeconds(durationSec) : null);
   const youtubeId = extractYouTubeVideoId(parsed);
   const inferredCover = normalizedCover
     || (youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : null);
+  const parsedStreamUrl = String(streamUrl || '').trim();
+  let normalizedStreamUrl = null;
+  if (parsedStreamUrl) {
+    try {
+      const streamCandidate = new URL(parsedStreamUrl);
+      if (['http:', 'https:'].includes(streamCandidate.protocol)) {
+        normalizedStreamUrl = streamCandidate.toString();
+      }
+    } catch {
+      normalizedStreamUrl = null;
+    }
+  }
+
+  const inferredPlayable = isPlayable !== undefined
+    ? Boolean(isPlayable)
+    : Boolean(normalizedStreamUrl || inferredSource === 'direct');
+  const effectiveStreamUrl = normalizedStreamUrl || (inferredPlayable && inferredSource === 'direct' ? parsed.toString() : null);
 
   return {
     id: uuidv4(),
     url: parsed.toString(),
     title: normalizedTitle,
-    source,
-    source_label: sourceLabel(source),
+    source: inferredSource,
+    source_label: normalizeLabel(sourceLabelOverride, sourceLabel(inferredSource), 60),
     cover_url: inferredCover,
     duration_sec: normalizedDuration,
+    stream_url: effectiveStreamUrl,
+    is_playable: inferredPlayable,
+    playback_hint: normalizeLabel(playbackHint, inferredPlayable ? 'stream' : 'external', 24),
     requested_by_user_id: requestedByUserId,
     requested_by_name: normalizeLabel(requestedByName, 'Member', 80),
     added_at_ms: Date.now(),
@@ -567,48 +602,85 @@ function setupWebSocket(io) {
       socket.emit('voice:music:state', toVoiceMusicSnapshot(channel.id));
     });
 
-    socket.on('voice:music:enqueue', (data) => {
-      const channelId = data?.channelId;
+    socket.on('voice:music:enqueue', async (data) => {
+      const channelId = String(data?.channelId || '').trim();
       const inputUrl = String(data?.url || '').trim();
-      if (!inputUrl) return;
+      if (!channelId || !inputUrl) return;
 
-      withVoiceMusicControl(channelId, (session) => {
-        if (session.queue.length >= MAX_VOICE_MUSIC_QUEUE) {
-          socket.emit('voice:music:error', {
-            channelId: String(channelId || ''),
-            message: `Queue limit reached (${MAX_VOICE_MUSIC_QUEUE} tracks).`,
-          });
-          return false;
-        }
+      const channel = resolveVoiceChannelForUser(channelId, userId);
+      if (!channel) return;
+      voiceChannelServerMap.set(channel.id, channel.server_id);
 
-        const track = createVoiceMusicTrack({
-          url: inputUrl,
-          title: data?.title,
-          coverUrl: data?.coverUrl,
-          durationSec: data?.durationSec,
-          requestedByUserId: userId,
-          requestedByName: loadUserMusicLabel(userId),
+      if (!canControlVoiceMusic(io, channel, userId)) {
+        socket.emit('voice:music:error', {
+          channelId: channel.id,
+          message: 'You need voice channel rights to control shared music.',
         });
+        return;
+      }
 
-        if (!track) {
-          socket.emit('voice:music:error', {
-            channelId: String(channelId || ''),
-            message: 'Only valid http(s) music links can be queued.',
-          });
-          return false;
-        }
+      const session = getOrCreateVoiceMusicSession(channel.id, channel.server_id);
+      const availableSlots = Math.max(0, MAX_VOICE_MUSIC_QUEUE - session.queue.length);
+      if (availableSlots <= 0) {
+        socket.emit('voice:music:error', {
+          channelId: channel.id,
+          message: `Queue limit reached (${MAX_VOICE_MUSIC_QUEUE} tracks).`,
+        });
+        return;
+      }
 
-        session.queue.push(track);
-        const nowMs = Date.now();
-        if (session.currentIndex < 0) {
-          session.currentIndex = 0;
-          session.playbackState = 'paused';
-          session.basePositionSec = 0;
-          session.stateAnchorMs = nowMs;
-        }
-        markVoiceMusicUpdated(session, userId, nowMs);
-        return true;
+      const titleHint = String(data?.title || '').trim();
+      const resolved = await resolveMusicInputUrl(inputUrl, {
+        titleHint,
+        maxTracks: availableSlots,
       });
+
+      if (!resolved?.tracks?.length) {
+        const reason = resolved?.error === 'invalid_protocol' || resolved?.error === 'invalid_url'
+          ? 'Only valid http(s) links are allowed.'
+          : 'Could not resolve this link. Try another Spotify track/playlist or direct audio URL.';
+        socket.emit('voice:music:error', {
+          channelId: channel.id,
+          message: reason,
+        });
+        return;
+      }
+
+      const requestedByName = loadUserMusicLabel(userId);
+      const createdTracks = resolved.tracks
+        .map((resolvedTrack) => createVoiceMusicTrack({
+          url: resolvedTrack.url,
+          title: resolvedTrack.title || titleHint,
+          coverUrl: resolvedTrack.coverUrl ?? data?.coverUrl,
+          durationSec: resolvedTrack.durationSec ?? data?.durationSec,
+          source: resolvedTrack.source,
+          sourceLabelOverride: resolvedTrack.sourceLabel,
+          streamUrl: resolvedTrack.streamUrl,
+          isPlayable: resolvedTrack.isPlayable,
+          playbackHint: resolvedTrack.playbackHint,
+          requestedByUserId: userId,
+          requestedByName,
+        }))
+        .filter(Boolean);
+
+      if (createdTracks.length === 0) {
+        socket.emit('voice:music:error', {
+          channelId: channel.id,
+          message: 'Link was recognized but no playable entries were found.',
+        });
+        return;
+      }
+
+      session.queue.push(...createdTracks);
+      const nowMs = Date.now();
+      if (session.currentIndex < 0) {
+        session.currentIndex = 0;
+        session.playbackState = 'paused';
+        session.basePositionSec = 0;
+        session.stateAnchorMs = nowMs;
+      }
+      markVoiceMusicUpdated(session, userId, nowMs);
+      emitVoiceMusicState(io, channel.id);
     });
 
     socket.on('voice:music:play', (data) => {

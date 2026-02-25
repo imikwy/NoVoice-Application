@@ -95,13 +95,24 @@ function normalizeMusicTrack(track) {
   const url = String(track.url || '').trim();
   if (!url) return null;
 
+  const resolvedStreamUrl = track.stream_url ? String(track.stream_url) : (track.streamUrl ? String(track.streamUrl) : null);
+  const resolvedSource = String(track.source || 'direct').toLowerCase();
+  const resolvedIsPlayable = track.is_playable !== undefined
+    ? Boolean(track.is_playable)
+    : (track.isPlayable !== undefined
+      ? Boolean(track.isPlayable)
+      : Boolean(resolvedStreamUrl || resolvedSource === 'direct'));
+
   return {
     id: String(track.id || ''),
     url,
     title: String(track.title || 'Untitled Track').trim() || 'Untitled Track',
-    source: String(track.source || 'direct').toLowerCase(),
+    source: resolvedSource,
     sourceLabel: String(track.source_label || track.sourceLabel || 'Audio Link'),
     coverUrl: track.cover_url ? String(track.cover_url) : (track.coverUrl ? String(track.coverUrl) : null),
+    streamUrl: resolvedStreamUrl,
+    isPlayable: resolvedIsPlayable,
+    playbackHint: String(track.playback_hint || track.playbackHint || ''),
     durationSec: Number.isFinite(Number(track.duration_sec))
       ? clampMusicSeconds(track.duration_sec)
       : (Number.isFinite(Number(track.durationSec)) ? clampMusicSeconds(track.durationSec) : null),
@@ -1912,6 +1923,8 @@ export function VoiceProvider({ children }) {
   }, []);
 
   const handleSharedMusicError = useCallback(() => {
+    const snapshot = voiceMusicStateRef.current;
+    if (!snapshot?.currentTrack?.isPlayable) return;
     setVoiceMusicError('Track could not be played on this device/link.');
   }, []);
 
@@ -1936,10 +1949,26 @@ export function VoiceProvider({ children }) {
       return;
     }
 
+    const resolvedStreamUrl = String(
+      snapshot.currentTrack?.streamUrl
+      || (snapshot.currentTrack?.isPlayable ? snapshot.currentTrack?.url : '')
+    ).trim();
+
+    if (!resolvedStreamUrl) {
+      audio.pause();
+      audio.removeAttribute('src');
+      sharedMusicTrackRef.current = snapshot.currentTrack.id;
+      sharedMusicDurationSentRef.current = '';
+      return;
+    }
+
     if (sharedMusicTrackRef.current !== snapshot.currentTrack.id) {
       sharedMusicTrackRef.current = snapshot.currentTrack.id;
       sharedMusicDurationSentRef.current = '';
-      audio.src = snapshot.currentTrack.url;
+      audio.src = resolvedStreamUrl;
+      audio.load();
+    } else if (audio.src !== resolvedStreamUrl) {
+      audio.src = resolvedStreamUrl;
       audio.load();
     }
 
