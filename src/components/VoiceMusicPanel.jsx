@@ -116,13 +116,13 @@ export default function VoiceMusicPanel({
                 {currentTrack?.title || 'Queue a track to start listening'}
               </p>
               <p className="text-[11px] text-nv-text-tertiary truncate">
-                {currentTrack ? `${currentTrack.sourceLabel} - requested by ${currentTrack.requestedByName}` : 'Direct audio links sync playback. Spotify-Playlists/-Songs werden automatisch aufgelöst.'}
+                {currentTrack ? `${currentTrack.sourceLabel} - requested by ${currentTrack.requestedByName}` : 'Spotify tracks and playlists are resolved automatically.'}
               </p>
             </div>
           </div>
           {hasTrack && !currentTrackPlayable && (
             <p className="text-[10px] text-nv-text-tertiary mt-2">
-              This source has no direct stream URL in-app. Queue stays synced and you can open the source link.
+              No playable in-app preview was found for this Spotify entry.
             </p>
           )}
 
@@ -268,9 +268,9 @@ export default function VoiceMusicPanel({
                       {isPlaying ? 'Playing live' : playbackState === 'paused' ? 'Paused' : 'Ready'}
                     </p>
                   )}
-                  {!isActive && track.source !== 'direct' && (
+                  {!isActive && !track.isPlayable && (
                     <p className="text-[10px] text-nv-text-tertiary mt-1">
-                      Link source (not direct stream)
+                      No playable preview for this entry
                     </p>
                   )}
                 </div>
@@ -292,7 +292,7 @@ export default function VoiceMusicPanel({
                         handleQueueTrack();
                       }
                     }}
-                    placeholder="Paste Spotify/YouTube/audio URL"
+                    placeholder="Paste Spotify track/playlist URL"
                     disabled={!canControl}
                     className="w-full h-8 rounded-lg border border-white/[0.1] bg-black/25 pl-8 pr-2 text-xs text-nv-text-primary placeholder:text-nv-text-tertiary/70 focus:outline-none focus:border-nv-accent/45 disabled:opacity-50"
                   />

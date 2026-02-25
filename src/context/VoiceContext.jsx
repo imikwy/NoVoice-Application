@@ -97,13 +97,11 @@ function normalizeMusicTrack(track) {
 
   const resolvedStreamUrl = track.stream_url ? String(track.stream_url) : (track.streamUrl ? String(track.streamUrl) : null);
   const resolvedSource = String(track.source || 'direct').toLowerCase();
-  const resolvedVideoId = String(track.video_id || track.videoId || '').trim();
-  const resolvedPlayerType = String(track.player_type || track.playerType || (resolvedVideoId ? 'youtube' : 'audio')).toLowerCase();
   const resolvedIsPlayable = track.is_playable !== undefined
     ? Boolean(track.is_playable)
     : (track.isPlayable !== undefined
       ? Boolean(track.isPlayable)
-      : Boolean(resolvedStreamUrl || resolvedSource === 'direct' || (resolvedPlayerType === 'youtube' && resolvedVideoId)));
+      : Boolean(resolvedStreamUrl || resolvedSource === 'direct'));
 
   return {
     id: String(track.id || ''),
@@ -113,8 +111,8 @@ function normalizeMusicTrack(track) {
     sourceLabel: String(track.source_label || track.sourceLabel || 'Audio Link'),
     coverUrl: track.cover_url ? String(track.cover_url) : (track.coverUrl ? String(track.coverUrl) : null),
     streamUrl: resolvedStreamUrl,
-    playerType: resolvedPlayerType,
-    videoId: resolvedVideoId,
+    playerType: 'audio',
+    videoId: '',
     isPlayable: resolvedIsPlayable,
     playbackHint: String(track.playback_hint || track.playbackHint || ''),
     durationSec: Number.isFinite(Number(track.duration_sec))
@@ -528,9 +526,6 @@ export function VoiceProvider({ children }) {
   const voiceMusicStateRef = useRef(voiceMusicState);
   const voiceMusicWatchChannelRef = useRef(null);
   const sharedMusicAudioRef = useRef(null);
-  const sharedMusicYoutubeHostRef = useRef(null);
-  const sharedMusicYoutubePlayerRef = useRef(null);
-  const sharedMusicYoutubeApiPromiseRef = useRef(null);
   const sharedMusicTrackRef = useRef('');
   const sharedMusicDurationSentRef = useRef('');
 
@@ -1886,22 +1881,6 @@ export function VoiceProvider({ children }) {
 
     const tick = () => {
       const audio = sharedMusicAudioRef.current;
-      const ytPlayer = sharedMusicYoutubePlayerRef.current;
-      const isYouTubeTrack = snapshot.currentTrack?.playerType === 'youtube' && Boolean(snapshot.currentTrack?.videoId);
-      if (
-        isYouTubeTrack
-        && ytPlayer
-        && snapshot.channelId === joinedVoiceChannelRef.current
-        && snapshot.currentTrack?.id === sharedMusicTrackRef.current
-      ) {
-        try {
-          const ytCurrent = Number(ytPlayer.getCurrentTime?.() || 0);
-          if (Number.isFinite(ytCurrent) && ytCurrent >= 0) {
-            setVoiceMusicPositionSec(clampMusicSeconds(ytCurrent));
-            return;
-          }
-        } catch {}
-      }
       // readyState > 0 (HAVE_METADATA+) ensures audio actually has a loaded source.
       // Without this guard, a src-less audio element returns currentTime=0 (finite)
       // and masks the server-derived advancing position entirely.
@@ -1955,115 +1934,6 @@ export function VoiceProvider({ children }) {
     setVoiceMusicError('Track could not be played on this device/link.');
   }, []);
 
-  const ensureYouTubeApi = useCallback(() => {
-    if (typeof window === 'undefined') return Promise.resolve(null);
-    if (window.YT?.Player) return Promise.resolve(window.YT);
-    if (sharedMusicYoutubeApiPromiseRef.current) return sharedMusicYoutubeApiPromiseRef.current;
-
-    sharedMusicYoutubeApiPromiseRef.current = new Promise((resolve, reject) => {
-      let settled = false;
-      let readyTimeoutId = 0;
-      const settle = (handler, value) => {
-        if (settled) return;
-        settled = true;
-        if (readyTimeoutId) {
-          clearTimeout(readyTimeoutId);
-        }
-        handler(value);
-      };
-      const existingTag = document.querySelector('script[src="https://www.youtube.com/iframe_api"]');
-      const previousReadyCallback = window.onYouTubeIframeAPIReady;
-
-      window.onYouTubeIframeAPIReady = () => {
-        if (typeof previousReadyCallback === 'function') {
-          try { previousReadyCallback(); } catch {}
-        }
-        settle(resolve, window.YT || null);
-      };
-
-      if (!existingTag) {
-        const script = document.createElement('script');
-        script.src = 'https://www.youtube.com/iframe_api';
-        script.async = true;
-        script.onerror = () => settle(reject, new Error('Failed to load YouTube API'));
-        document.head.appendChild(script);
-      }
-
-      readyTimeoutId = window.setTimeout(() => {
-        if (window.YT?.Player) {
-          settle(resolve, window.YT);
-          return;
-        }
-        settle(reject, new Error('YouTube API timed out'));
-      }, 9000);
-
-      if (window.YT?.Player) {
-        settle(resolve, window.YT);
-      }
-    }).catch(() => null);
-
-    return sharedMusicYoutubeApiPromiseRef.current;
-  }, []);
-
-  const destroyYouTubePlayer = useCallback(() => {
-    const player = sharedMusicYoutubePlayerRef.current;
-    if (!player) return;
-    try { player.stopVideo?.(); } catch {}
-    try { player.destroy?.(); } catch {}
-    sharedMusicYoutubePlayerRef.current = null;
-  }, []);
-
-  const ensureYouTubePlayer = useCallback(async (videoId) => {
-    if (!videoId || !sharedMusicYoutubeHostRef.current) return null;
-    const YT = await ensureYouTubeApi();
-    if (!YT?.Player) return null;
-
-    if (sharedMusicYoutubePlayerRef.current) {
-      return sharedMusicYoutubePlayerRef.current;
-    }
-
-    return new Promise((resolve) => {
-      try {
-        const player = new YT.Player(sharedMusicYoutubeHostRef.current, {
-          width: '0',
-          height: '0',
-          videoId,
-          playerVars: {
-            autoplay: 0,
-            controls: 0,
-            disablekb: 1,
-            fs: 0,
-            iv_load_policy: 3,
-            modestbranding: 1,
-            playsinline: 1,
-            rel: 0,
-          },
-          events: {
-            onReady: () => {
-              sharedMusicYoutubePlayerRef.current = player;
-              resolve(player);
-            },
-            onStateChange: (event) => {
-              if (event?.data !== YT.PlayerState.ENDED) return;
-              const snapshot = voiceMusicStateRef.current;
-              const channelId = snapshot?.channelId || joinedVoiceChannelRef.current;
-              const trackId = snapshot?.currentTrack?.id;
-              if (!channelId || !trackId || !socketRef.current) return;
-              socketRef.current.emit('voice:music:track:ended', { channelId, trackId });
-            },
-            onError: () => {
-              const snapshot = voiceMusicStateRef.current;
-              if (!snapshot?.currentTrack?.isPlayable) return;
-              setVoiceMusicError('YouTube playback failed for this track.');
-            },
-          },
-        });
-      } catch {
-        resolve(null);
-      }
-    });
-  }, [ensureYouTubeApi]);
-
   useEffect(() => {
     const audio = sharedMusicAudioRef.current;
     const snapshot = voiceMusicState;
@@ -2082,68 +1952,6 @@ export function VoiceProvider({ children }) {
       audio.removeAttribute('src');
       sharedMusicTrackRef.current = '';
       sharedMusicDurationSentRef.current = '';
-      const ytPlayer = sharedMusicYoutubePlayerRef.current;
-      if (ytPlayer) {
-        try { ytPlayer.stopVideo?.(); } catch {}
-      }
-      return;
-    }
-
-    const usesYouTubePlayer = snapshot.currentTrack?.playerType === 'youtube' && Boolean(snapshot.currentTrack?.videoId);
-    if (usesYouTubePlayer) {
-      audio.pause();
-      audio.removeAttribute('src');
-
-      ensureYouTubePlayer(snapshot.currentTrack.videoId).then((player) => {
-        if (!player) return;
-        const isTrackChanged = sharedMusicTrackRef.current !== snapshot.currentTrack.id;
-        if (isTrackChanged && snapshot.currentTrack?.videoId) {
-          try { player.loadVideoById(snapshot.currentTrack.videoId); } catch {}
-          sharedMusicDurationSentRef.current = '';
-          sharedMusicTrackRef.current = snapshot.currentTrack.id;
-        }
-
-        const targetPositionSec = getVoiceMusicDerivedPosition(snapshot);
-        try {
-          const current = Number(player.getCurrentTime?.() || 0);
-          if (Number.isFinite(targetPositionSec) && Math.abs(current - targetPositionSec) > 1.5) {
-            player.seekTo(targetPositionSec, true);
-          }
-        } catch {}
-
-        try {
-          if (deafened) {
-            player.mute?.();
-            player.setVolume?.(0);
-          } else {
-            player.unMute?.();
-            player.setVolume?.(Math.round(clamp(outputVolume, 0, 200) / 2));
-          }
-        } catch {}
-
-        if (snapshot.playbackState === 'playing') {
-          try { player.playVideo?.(); } catch {}
-        } else {
-          try { player.pauseVideo?.(); } catch {}
-        }
-
-        if (sharedMusicDurationSentRef.current === snapshot.currentTrack.id) return;
-        try {
-          const durationSec = Number(player.getDuration?.() || 0);
-          if (Number.isFinite(durationSec) && durationSec > 0 && socketRef.current) {
-            sharedMusicDurationSentRef.current = snapshot.currentTrack.id;
-            socketRef.current.emit('voice:music:track:duration', {
-              channelId: snapshot.channelId,
-              trackId: snapshot.currentTrack.id,
-              durationSec: clampMusicSeconds(durationSec),
-            });
-          }
-        } catch {}
-      });
-
-      if (sharedMusicTrackRef.current !== snapshot.currentTrack.id) {
-        sharedMusicTrackRef.current = snapshot.currentTrack.id;
-      }
       return;
     }
 
@@ -2157,16 +1965,7 @@ export function VoiceProvider({ children }) {
       audio.removeAttribute('src');
       sharedMusicTrackRef.current = snapshot.currentTrack.id;
       sharedMusicDurationSentRef.current = '';
-      const ytPlayer = sharedMusicYoutubePlayerRef.current;
-      if (ytPlayer) {
-        try { ytPlayer.pauseVideo?.(); } catch {}
-      }
       return;
-    }
-
-    const ytPlayer = sharedMusicYoutubePlayerRef.current;
-    if (ytPlayer) {
-      try { ytPlayer.pauseVideo?.(); } catch {}
     }
 
     if (sharedMusicTrackRef.current !== snapshot.currentTrack.id) {
@@ -2209,14 +2008,7 @@ export function VoiceProvider({ children }) {
     selectedOutputDeviceId,
     deafened,
     getVoiceMusicDerivedPosition,
-    ensureYouTubePlayer,
   ]);
-
-  useEffect(() => {
-    return () => {
-      destroyYouTubePlayer();
-    };
-  }, [destroyYouTubePlayer]);
 
   const hasRemoteVoicePeers = (
     voiceParticipants.some((participant) => participant.id !== user?.id)
@@ -2291,19 +2083,7 @@ export function VoiceProvider({ children }) {
       }}
     >
       {children}
-      <div
-        aria-hidden
-        style={{
-          position: 'fixed',
-          left: -9999,
-          top: -9999,
-          width: 1,
-          height: 1,
-          overflow: 'hidden',
-          opacity: 0,
-          pointerEvents: 'none',
-        }}
-      >
+      <div aria-hidden style={{ display: 'none' }}>
         {remoteAudioStreams.map(({ userId, stream }) => (
           <RemoteAudio
             key={userId}
@@ -2321,10 +2101,6 @@ export function VoiceProvider({ children }) {
           onLoadedMetadata={handleSharedMusicMetadata}
           onEnded={handleSharedMusicEnded}
           onError={handleSharedMusicError}
-        />
-        <div
-          ref={sharedMusicYoutubeHostRef}
-          style={{ width: 1, height: 1, overflow: 'hidden' }}
         />
       </div>
     </VoiceContext.Provider>

@@ -1,14 +1,12 @@
 const MAX_RESOLVED_TRACKS = 120;
 
 const SUPPORTED_SPOTIFY_TYPES = new Set(['track', 'playlist', 'album']);
-const DIRECT_AUDIO_EXT_RE = /\.(mp3|m4a|aac|wav|ogg|opus|flac|weba|webm|mp4)(\?|#|$)/i;
 
 const spotifyTokenCache = {
   token: null,
   expiresAtMs: 0,
 };
 const deezerPreviewCache = new Map();
-const youtubeSearchCache = new Map();
 
 function normalizeLabel(value, fallback = '', maxLength = 180) {
   const cleaned = String(value || '')
@@ -39,7 +37,6 @@ function inferTitleFromUrl(urlObj) {
 
 function sourceLabel(source) {
   if (source === 'spotify') return 'Spotify';
-  if (source === 'youtube') return 'YouTube';
   if (source === 'soundcloud') return 'SoundCloud';
   if (source === 'bandcamp') return 'Bandcamp';
   if (source === 'mixcloud') return 'Mixcloud';
@@ -54,25 +51,6 @@ function inferSource(hostname) {
   if (host.includes('bandcamp')) return 'bandcamp';
   if (host.includes('mixcloud')) return 'mixcloud';
   return 'direct';
-}
-
-function extractYouTubeVideoId(urlObj) {
-  const host = urlObj.hostname.toLowerCase();
-  if (host.includes('youtu.be')) {
-    const firstPath = (urlObj.pathname || '').split('/').filter(Boolean)[0];
-    return firstPath || null;
-  }
-  if (host.includes('youtube.com')) {
-    if (urlObj.pathname === '/watch') {
-      return urlObj.searchParams.get('v');
-    }
-    const parts = (urlObj.pathname || '').split('/').filter(Boolean);
-    const marker = parts.findIndex((p) => p === 'shorts' || p === 'embed');
-    if (marker >= 0 && parts[marker + 1]) {
-      return parts[marker + 1];
-    }
-  }
-  return null;
 }
 
 function parseSpotifyResource(urlObj) {
@@ -452,37 +430,11 @@ async function resolveDeezerPreviewForTrack(track) {
   };
 }
 
-async function resolveYouTubeFallbackForSpotifyTrack(track) {
-  if (!track || track.source !== 'spotify' || track.playerType === 'youtube') return track;
-
-  const searchTitle = normalizeLabel(track.searchTitle, normalizeLabel(track.title.split(' - ')[0], '', 140), 140);
-  const searchArtist = normalizeLabel(track.searchArtist, parseArtistFromSpotifyTitle(track.title), 140);
-  const query = normalizeLabel(`${searchTitle} ${searchArtist} official audio`, searchTitle, 220);
-  const videoId = await searchYouTubeVideoId(query);
-  if (!videoId) return track;
-
-  return {
-    ...track,
-    streamUrl: null,
-    isPlayable: true,
-    playbackHint: 'youtube',
-    playerType: 'youtube',
-    videoId,
-    coverUrl: track.coverUrl || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
-  };
-}
-
 async function enrichSpotifyTracksWithPreviews(tracks) {
   if (!Array.isArray(tracks) || tracks.length === 0) return tracks || [];
 
-  const withYoutubeFallback = await mapWithConcurrency(
-    tracks,
-    5,
-    async (track) => resolveYouTubeFallbackForSpotifyTrack(track)
-  );
-
   const mapped = await mapWithConcurrency(
-    withYoutubeFallback,
+    tracks,
     6,
     async (track) => resolveDeezerPreviewForTrack(track)
   );
@@ -515,70 +467,6 @@ async function resolveSpotify(urlObj, { titleHint, maxTracks }) {
   return enrichSpotifyTracksWithPreviews(viaFallback);
 }
 
-async function resolveYouTube(urlObj, titleHint) {
-  const videoId = extractYouTubeVideoId(urlObj);
-  const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(urlObj.toString())}&format=json`;
-  const metadata = await fetchJson(oembedUrl, {}, 6000);
-  const fallbackCover = videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : null;
-
-  return [
-    toResolvedTrack({
-      url: urlObj.toString(),
-      title: normalizeLabel(titleHint, normalizeLabel(metadata?.title, inferTitleFromUrl(urlObj))),
-      source: 'youtube',
-      coverUrl: metadata?.thumbnail_url || fallbackCover,
-      durationSec: null,
-      streamUrl: null,
-      isPlayable: Boolean(videoId),
-      playbackHint: videoId ? 'youtube' : 'external',
-      playerType: videoId ? 'youtube' : 'audio',
-      videoId: videoId || '',
-    }),
-  ];
-}
-
-function extractYouTubeVideoIdFromSearchHtml(html) {
-  if (!html) return null;
-  const ids = [...String(html).matchAll(/"videoId":"([a-zA-Z0-9_-]{11})"/g)]
-    .map((match) => match[1]);
-  if (ids.length === 0) return null;
-  return [...new Set(ids)][0] || null;
-}
-
-async function searchYouTubeVideoId(query) {
-  const normalizedQuery = normalizeLabel(query, '', 220);
-  if (!normalizedQuery) return null;
-
-  const cacheKey = normalizedQuery.toLowerCase();
-  if (youtubeSearchCache.has(cacheKey)) {
-    return youtubeSearchCache.get(cacheKey);
-  }
-
-  const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(normalizedQuery)}`;
-  const html = await fetchText(searchUrl, {}, 6500);
-  const videoId = extractYouTubeVideoIdFromSearchHtml(html);
-  youtubeSearchCache.set(cacheKey, videoId || null);
-  return videoId || null;
-}
-
-function resolveDirect(urlObj, titleHint) {
-  const source = inferSource(urlObj.hostname);
-  const looksLikeDirectStream = source === 'direct' || DIRECT_AUDIO_EXT_RE.test(urlObj.toString());
-
-  return [
-    toResolvedTrack({
-      url: urlObj.toString(),
-      title: normalizeLabel(titleHint, inferTitleFromUrl(urlObj)),
-      source,
-      coverUrl: null,
-      durationSec: null,
-      streamUrl: looksLikeDirectStream ? urlObj.toString() : null,
-      isPlayable: looksLikeDirectStream,
-      playbackHint: looksLikeDirectStream ? 'stream' : 'external',
-    }),
-  ];
-}
-
 async function resolveMusicInputUrl(inputUrl, { titleHint = '', maxTracks = MAX_RESOLVED_TRACKS } = {}) {
   let parsedUrl;
   try {
@@ -599,12 +487,7 @@ async function resolveMusicInputUrl(inputUrl, { titleHint = '', maxTracks = MAX_
     return { tracks: tracks.slice(0, boundedMax), error: null };
   }
 
-  if (source === 'youtube') {
-    const tracks = await resolveYouTube(parsedUrl, titleHint);
-    return { tracks: tracks.slice(0, boundedMax), error: null };
-  }
-
-  return { tracks: resolveDirect(parsedUrl, titleHint).slice(0, boundedMax), error: null };
+  return { tracks: [], error: 'unsupported_source' };
 }
 
 module.exports = {

@@ -38,28 +38,9 @@ function inferTrackTitle(urlObj) {
   return urlObj.hostname.replace(/^www\./, '');
 }
 
-function extractYouTubeVideoId(urlObj) {
-  const host = urlObj.hostname.toLowerCase();
-  if (host.includes('youtu.be')) {
-    const [firstPath] = (urlObj.pathname || '').split('/').filter(Boolean);
-    return firstPath || null;
-  }
-  if (host.includes('youtube.com')) {
-    if (urlObj.pathname === '/watch') {
-      return urlObj.searchParams.get('v');
-    }
-    const parts = (urlObj.pathname || '').split('/').filter(Boolean);
-    if (parts[0] === 'shorts' || parts[0] === 'embed') {
-      return parts[1] || null;
-    }
-  }
-  return null;
-}
-
 function inferMusicSource(urlObj) {
   const host = urlObj.hostname.toLowerCase();
   if (host.includes('spotify')) return 'spotify';
-  if (host.includes('youtube') || host.includes('youtu.be')) return 'youtube';
   if (host.includes('soundcloud')) return 'soundcloud';
   if (host.includes('bandcamp')) return 'bandcamp';
   if (host.includes('mixcloud')) return 'mixcloud';
@@ -68,7 +49,6 @@ function inferMusicSource(urlObj) {
 
 function sourceLabel(source) {
   if (source === 'spotify') return 'Spotify';
-  if (source === 'youtube') return 'YouTube';
   if (source === 'soundcloud') return 'SoundCloud';
   if (source === 'bandcamp') return 'Bandcamp';
   if (source === 'mixcloud') return 'Mixcloud';
@@ -87,8 +67,6 @@ function createVoiceMusicTrack({
   streamUrl,
   isPlayable,
   playbackHint,
-  playerType,
-  videoId,
 }) {
   let parsed;
   try {
@@ -105,9 +83,7 @@ function createVoiceMusicTrack({
   const normalizedDuration = durationSec === null || durationSec === undefined || durationSec === ''
     ? null
     : (Number.isFinite(Number(durationSec)) ? clampMusicSeconds(durationSec) : null);
-  const youtubeId = extractYouTubeVideoId(parsed);
-  const inferredCover = normalizedCover
-    || (youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : null);
+  const inferredCover = normalizedCover || null;
   const parsedStreamUrl = String(streamUrl || '').trim();
   let normalizedStreamUrl = null;
   if (parsedStreamUrl) {
@@ -121,15 +97,11 @@ function createVoiceMusicTrack({
     }
   }
 
-  const normalizedVideoId = normalizeLabel(videoId, '', 32);
-  const normalizedPlayerType = normalizeLabel(playerType, normalizedVideoId ? 'youtube' : 'audio', 20).toLowerCase();
+  const normalizedVideoId = '';
+  const normalizedPlayerType = 'audio';
   const inferredPlayable = isPlayable !== undefined
     ? Boolean(isPlayable)
-    : Boolean(
-      normalizedStreamUrl
-      || inferredSource === 'direct'
-      || (normalizedPlayerType === 'youtube' && normalizedVideoId)
-    );
+    : Boolean(normalizedStreamUrl || inferredSource === 'direct');
   const effectiveStreamUrl = normalizedStreamUrl || (inferredPlayable && inferredSource === 'direct' ? parsed.toString() : null);
 
   return {
@@ -648,7 +620,9 @@ function setupWebSocket(io) {
       if (!resolved?.tracks?.length) {
         const reason = resolved?.error === 'invalid_protocol' || resolved?.error === 'invalid_url'
           ? 'Only valid http(s) links are allowed.'
-          : 'Could not resolve this link. Try another Spotify track/playlist or direct audio URL.';
+          : (resolved?.error === 'unsupported_source'
+            ? 'Only Spotify links are supported right now.'
+            : 'Could not resolve this Spotify link. Try another track or playlist.');
         socket.emit('voice:music:error', {
           channelId: channel.id,
           message: reason,
@@ -668,8 +642,6 @@ function setupWebSocket(io) {
           streamUrl: resolvedTrack.streamUrl,
           isPlayable: resolvedTrack.isPlayable,
           playbackHint: resolvedTrack.playbackHint,
-          playerType: resolvedTrack.playerType,
-          videoId: resolvedTrack.videoId,
           requestedByUserId: userId,
           requestedByName,
         }))
