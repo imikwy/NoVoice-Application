@@ -82,6 +82,83 @@ const BASE_AUDIO_CONSTRAINTS = {
   sampleSize: 24,
   latency: 0,
 };
+const MAX_MUSIC_SEEK_SECONDS = 12 * 60 * 60;
+
+function clampMusicSeconds(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return clamp(Math.round(numeric * 1000) / 1000, 0, MAX_MUSIC_SEEK_SECONDS);
+}
+
+function normalizeMusicTrack(track) {
+  if (!track || typeof track !== 'object') return null;
+  const url = String(track.url || '').trim();
+  if (!url) return null;
+
+  return {
+    id: String(track.id || ''),
+    url,
+    title: String(track.title || 'Untitled Track').trim() || 'Untitled Track',
+    source: String(track.source || 'direct').toLowerCase(),
+    sourceLabel: String(track.source_label || track.sourceLabel || 'Audio Link'),
+    coverUrl: track.cover_url ? String(track.cover_url) : (track.coverUrl ? String(track.coverUrl) : null),
+    durationSec: Number.isFinite(Number(track.duration_sec))
+      ? clampMusicSeconds(track.duration_sec)
+      : (Number.isFinite(Number(track.durationSec)) ? clampMusicSeconds(track.durationSec) : null),
+    requestedByUserId: String(track.requested_by_user_id || track.requestedByUserId || ''),
+    requestedByName: String(track.requested_by_name || track.requestedByName || '').trim() || 'Member',
+    addedAtMs: Number.isFinite(Number(track.added_at_ms)) ? Number(track.added_at_ms) : Date.now(),
+  };
+}
+
+function createEmptyVoiceMusicState(channelId = null) {
+  const nowMs = Date.now();
+  return {
+    channelId: channelId || null,
+    queue: [],
+    currentIndex: -1,
+    currentTrackId: null,
+    currentTrack: null,
+    playbackState: 'idle',
+    positionSec: 0,
+    serverNowMs: nowMs,
+    updatedAtMs: nowMs,
+    updatedByUserId: null,
+  };
+}
+
+function normalizeVoiceMusicState(payload, fallbackChannelId = null) {
+  if (!payload || typeof payload !== 'object') {
+    return createEmptyVoiceMusicState(fallbackChannelId);
+  }
+
+  const channelId = payload.channelId ? String(payload.channelId) : (fallbackChannelId || null);
+  const queue = Array.isArray(payload.queue)
+    ? payload.queue.map((track) => normalizeMusicTrack(track)).filter(Boolean)
+    : [];
+  const requestedState = String(payload.playbackState || 'idle').toLowerCase();
+  const playbackState = ['playing', 'paused', 'idle'].includes(requestedState) ? requestedState : 'idle';
+  const currentIndexRaw = Number(payload.currentIndex);
+  const currentIndex = Number.isInteger(currentIndexRaw)
+    ? clamp(currentIndexRaw, -1, queue.length - 1)
+    : -1;
+  const currentTrack = currentIndex >= 0 ? (queue[currentIndex] || null) : null;
+  const currentTrackId = currentTrack?.id || (payload.currentTrackId ? String(payload.currentTrackId) : null);
+  const serverNowMs = Number.isFinite(Number(payload.serverNowMs)) ? Number(payload.serverNowMs) : Date.now();
+
+  return {
+    channelId,
+    queue,
+    currentIndex,
+    currentTrackId,
+    currentTrack,
+    playbackState: currentTrack ? playbackState : 'idle',
+    positionSec: clampMusicSeconds(payload.positionSec),
+    serverNowMs,
+    updatedAtMs: Number.isFinite(Number(payload.updatedAtMs)) ? Number(payload.updatedAtMs) : serverNowMs,
+    updatedByUserId: payload.updatedByUserId ? String(payload.updatedByUserId) : null,
+  };
+}
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -358,6 +435,7 @@ export function VoiceProvider({ children }) {
     appContext = null;
   }
   const activeView = appContext?.activeView ?? null;
+  const activeChannel = appContext?.activeChannel ?? null;
   const activeServerApi = appContext?.activeServerApi ?? null;
   const initialSettingsRef = useRef(loadVoiceSettings());
 
@@ -409,6 +487,9 @@ export function VoiceProvider({ children }) {
     measuredBitrateKbps: null,
   });
   const [iceConfiguration, setIceConfiguration] = useState(() => ({ iceServers: DEFAULT_ICE_SERVERS }));
+  const [voiceMusicState, setVoiceMusicState] = useState(() => createEmptyVoiceMusicState(null));
+  const [voiceMusicError, setVoiceMusicError] = useState('');
+  const [voiceMusicPositionSec, setVoiceMusicPositionSec] = useState(0);
 
   const microphoneStreamRef = useRef(null);
   const localStreamRef = useRef(null);
@@ -429,10 +510,19 @@ export function VoiceProvider({ children }) {
   const monitorNodeRef = useRef(null);
   const micTestEnabledRef = useRef(false);
   const micTestFrameRef = useRef(0);
+  const voiceMusicStateRef = useRef(voiceMusicState);
+  const voiceMusicWatchChannelRef = useRef(null);
+  const sharedMusicAudioRef = useRef(null);
+  const sharedMusicTrackRef = useRef('');
+  const sharedMusicDurationSentRef = useRef('');
 
   useEffect(() => {
     socketRef.current = socket;
   }, [socket]);
+
+  useEffect(() => {
+    voiceMusicStateRef.current = voiceMusicState;
+  }, [voiceMusicState]);
 
   useEffect(() => {
     iceConfigurationRef.current = iceConfiguration;
@@ -517,6 +607,122 @@ export function VoiceProvider({ children }) {
     }),
     [getCurrentFmtpMaxBitrate, effectiveFecEnabled, lowLatencyMode]
   );
+
+  const getVoiceMusicDerivedPosition = useCallback((snapshot, nowMs = Date.now()) => {
+    const basePosition = clampMusicSeconds(snapshot?.positionSec);
+    if (snapshot?.playbackState !== 'playing') return basePosition;
+    const serverNowMs = Number(snapshot?.serverNowMs);
+    if (!Number.isFinite(serverNowMs)) return basePosition;
+    const driftSec = Math.max(0, (nowMs - serverNowMs) / 1000);
+    return clampMusicSeconds(basePosition + driftSec);
+  }, []);
+
+  const resolveVoiceMusicChannelId = useCallback(
+    (channelId) => {
+      if (channelId) return String(channelId);
+      if (joinedVoiceChannelRef.current) return String(joinedVoiceChannelRef.current);
+      if (voiceMusicWatchChannelRef.current) return String(voiceMusicWatchChannelRef.current);
+      if (activeVoiceChannelId) return String(activeVoiceChannelId);
+      return null;
+    },
+    [activeVoiceChannelId]
+  );
+
+  const emitVoiceMusicControl = useCallback(
+    (eventName, channelId, payload = {}) => {
+      const targetChannelId = resolveVoiceMusicChannelId(channelId);
+      if (!targetChannelId || !socketRef.current) return false;
+      setVoiceMusicError('');
+      socketRef.current.emit(eventName, {
+        channelId: targetChannelId,
+        ...payload,
+      });
+      return true;
+    },
+    [resolveVoiceMusicChannelId]
+  );
+
+  const requestVoiceMusicState = useCallback(
+    (channelId) => {
+      const targetChannelId = resolveVoiceMusicChannelId(channelId);
+      if (!targetChannelId || !socketRef.current) return false;
+      voiceMusicWatchChannelRef.current = targetChannelId;
+      socketRef.current.emit('voice:music:state:request', { channelId: targetChannelId });
+      return true;
+    },
+    [resolveVoiceMusicChannelId]
+  );
+
+  const enqueueVoiceMusic = useCallback(
+    ({ channelId, url, title = '', coverUrl = null, durationSec = null } = {}) => {
+      const trimmedUrl = String(url || '').trim();
+      if (!trimmedUrl) return false;
+      return emitVoiceMusicControl('voice:music:enqueue', channelId, {
+        url: trimmedUrl,
+        title: String(title || '').trim(),
+        coverUrl: coverUrl || null,
+        durationSec: Number.isFinite(Number(durationSec)) ? Number(durationSec) : null,
+      });
+    },
+    [emitVoiceMusicControl]
+  );
+
+  const playVoiceMusic = useCallback((channelId) => (
+    emitVoiceMusicControl('voice:music:play', channelId)
+  ), [emitVoiceMusicControl]);
+
+  const pauseVoiceMusic = useCallback((channelId) => (
+    emitVoiceMusicControl('voice:music:pause', channelId)
+  ), [emitVoiceMusicControl]);
+
+  const toggleVoiceMusicPlayback = useCallback((channelId) => {
+    const snapshot = voiceMusicStateRef.current;
+    if (snapshot.playbackState === 'playing') {
+      return emitVoiceMusicControl('voice:music:pause', channelId);
+    }
+    return emitVoiceMusicControl('voice:music:play', channelId);
+  }, [emitVoiceMusicControl]);
+
+  const seekVoiceMusic = useCallback((channelId, positionSec) => (
+    emitVoiceMusicControl('voice:music:seek', channelId, { positionSec: clampMusicSeconds(positionSec) })
+  ), [emitVoiceMusicControl]);
+
+  const skipVoiceMusicNext = useCallback((channelId) => (
+    emitVoiceMusicControl('voice:music:next', channelId)
+  ), [emitVoiceMusicControl]);
+
+  const skipVoiceMusicPrevious = useCallback((channelId) => (
+    emitVoiceMusicControl('voice:music:previous', channelId)
+  ), [emitVoiceMusicControl]);
+
+  const selectVoiceMusicTrack = useCallback((channelId, trackId) => {
+    const safeTrackId = String(trackId || '').trim();
+    if (!safeTrackId) return false;
+    return emitVoiceMusicControl('voice:music:set-current', channelId, { trackId: safeTrackId });
+  }, [emitVoiceMusicControl]);
+
+  const removeVoiceMusicTrack = useCallback((channelId, trackId) => {
+    const safeTrackId = String(trackId || '').trim();
+    if (!safeTrackId) return false;
+    return emitVoiceMusicControl('voice:music:remove', channelId, { trackId: safeTrackId });
+  }, [emitVoiceMusicControl]);
+
+  const clearVoiceMusicQueue = useCallback((channelId) => (
+    emitVoiceMusicControl('voice:music:clear', channelId)
+  ), [emitVoiceMusicControl]);
+
+  useEffect(() => {
+    if (!socket) return;
+    if (activeChannel?.type !== 'voice' || !activeChannel?.id) {
+      if (!joinedVoiceChannelRef.current) {
+        voiceMusicWatchChannelRef.current = null;
+      }
+      return;
+    }
+
+    voiceMusicWatchChannelRef.current = activeChannel.id;
+    requestVoiceMusicState(activeChannel.id);
+  }, [socket, activeChannel?.id, activeChannel?.type, requestVoiceMusicState]);
 
   const isPushToTalkMode = inputMode === INPUT_MODES.ptt;
   const effectiveSelfMuted = selfMuted || (isPushToTalkMode && !pttPressed);
@@ -920,6 +1126,8 @@ export function VoiceProvider({ children }) {
     setJoiningVoice(false);
     setVoiceParticipants([]);
     setVoiceError('');
+    setVoiceMusicError('');
+    setVoiceMusicPositionSec(0);
   }, [destroyAudioPipeline, stopStreamTracks]);
 
   const ensurePeerConnection = useCallback(
@@ -1080,12 +1288,39 @@ export function VoiceProvider({ children }) {
       }
     };
 
+    const handleVoiceMusicState = (payload) => {
+      const nextState = normalizeVoiceMusicState(payload);
+      if (!nextState.channelId) return;
+
+      const joinedChannelId = joinedVoiceChannelRef.current;
+      const watchedChannelId = voiceMusicWatchChannelRef.current;
+      if (nextState.channelId !== joinedChannelId && nextState.channelId !== watchedChannelId) {
+        return;
+      }
+
+      setVoiceMusicState(nextState);
+      setVoiceMusicError('');
+    };
+
+    const handleVoiceMusicError = (payload) => {
+      const channelId = payload?.channelId ? String(payload.channelId) : null;
+      const joinedChannelId = joinedVoiceChannelRef.current;
+      const watchedChannelId = voiceMusicWatchChannelRef.current;
+      if (channelId && channelId !== joinedChannelId && channelId !== watchedChannelId) return;
+      const message = String(payload?.message || 'Music action failed.');
+      setVoiceMusicError(message);
+    };
+
     socket.on('voice:state', handleVoiceState);
     socket.on('voice:signal', handleVoiceSignal);
+    socket.on('voice:music:state', handleVoiceMusicState);
+    socket.on('voice:music:error', handleVoiceMusicError);
 
     return () => {
       socket.off('voice:state', handleVoiceState);
       socket.off('voice:signal', handleVoiceSignal);
+      socket.off('voice:music:state', handleVoiceMusicState);
+      socket.off('voice:music:error', handleVoiceMusicError);
     };
   }, [socket, syncVoicePeers, ensurePeerConnection, getCurrentSdpOptions]);
 
@@ -1193,6 +1428,8 @@ export function VoiceProvider({ children }) {
 
         socket.emit('voice:join', { channelId });
         socket.emit('voice:state:request', { channelId });
+        socket.emit('voice:music:state:request', { channelId });
+        voiceMusicWatchChannelRef.current = channelId;
         refreshAudioDevices();
       } catch (err) {
         console.error(err);
@@ -1622,6 +1859,122 @@ export function VoiceProvider({ children }) {
     };
   }, [voiceConnected, voiceQualityMode, collectVoiceMetrics]);
 
+  useEffect(() => {
+    const snapshot = voiceMusicState;
+    if (!snapshot?.channelId || !snapshot.currentTrack) {
+      setVoiceMusicPositionSec(0);
+      return;
+    }
+
+    const tick = () => {
+      const audio = sharedMusicAudioRef.current;
+      if (
+        audio
+        && Number.isFinite(audio.currentTime)
+        && snapshot.channelId === joinedVoiceChannelRef.current
+        && snapshot.currentTrack?.id === sharedMusicTrackRef.current
+      ) {
+        setVoiceMusicPositionSec(clampMusicSeconds(audio.currentTime));
+        return;
+      }
+      setVoiceMusicPositionSec(getVoiceMusicDerivedPosition(snapshot));
+    };
+
+    tick();
+    if (snapshot.playbackState !== 'playing') return undefined;
+
+    const id = setInterval(tick, 280);
+    return () => clearInterval(id);
+  }, [voiceMusicState, getVoiceMusicDerivedPosition]);
+
+  const handleSharedMusicEnded = useCallback(() => {
+    const snapshot = voiceMusicStateRef.current;
+    const channelId = snapshot?.channelId || joinedVoiceChannelRef.current;
+    const trackId = snapshot?.currentTrack?.id;
+    if (!channelId || !trackId || !socketRef.current) return;
+    socketRef.current.emit('voice:music:track:ended', { channelId, trackId });
+  }, []);
+
+  const handleSharedMusicMetadata = useCallback(() => {
+    const audio = sharedMusicAudioRef.current;
+    const snapshot = voiceMusicStateRef.current;
+    if (!audio || !snapshot?.channelId || !snapshot?.currentTrack?.id || !socketRef.current) return;
+    if (sharedMusicDurationSentRef.current === snapshot.currentTrack.id) return;
+
+    const durationSec = Number(audio.duration);
+    if (!Number.isFinite(durationSec) || durationSec <= 0) return;
+    sharedMusicDurationSentRef.current = snapshot.currentTrack.id;
+    socketRef.current.emit('voice:music:track:duration', {
+      channelId: snapshot.channelId,
+      trackId: snapshot.currentTrack.id,
+      durationSec: clampMusicSeconds(durationSec),
+    });
+  }, []);
+
+  const handleSharedMusicError = useCallback(() => {
+    setVoiceMusicError('Track could not be played on this device/link.');
+  }, []);
+
+  useEffect(() => {
+    const audio = sharedMusicAudioRef.current;
+    const snapshot = voiceMusicState;
+    if (!audio) return;
+
+    const shouldAttach = Boolean(
+      voiceConnected
+      && activeVoiceChannelId
+      && snapshot.channelId
+      && snapshot.channelId === activeVoiceChannelId
+      && snapshot.currentTrack?.url
+    );
+
+    if (!shouldAttach) {
+      audio.pause();
+      audio.removeAttribute('src');
+      sharedMusicTrackRef.current = '';
+      sharedMusicDurationSentRef.current = '';
+      return;
+    }
+
+    if (sharedMusicTrackRef.current !== snapshot.currentTrack.id) {
+      sharedMusicTrackRef.current = snapshot.currentTrack.id;
+      sharedMusicDurationSentRef.current = '';
+      audio.src = snapshot.currentTrack.url;
+      audio.load();
+    }
+
+    audio.muted = deafened;
+    audio.volume = clamp(outputVolume / 100, 0, 1);
+
+    if (typeof audio.setSinkId === 'function' && selectedOutputDeviceId) {
+      audio.setSinkId(selectedOutputDeviceId).catch(() => {});
+    }
+
+    const targetPositionSec = getVoiceMusicDerivedPosition(snapshot);
+    if (Number.isFinite(targetPositionSec) && Math.abs((audio.currentTime || 0) - targetPositionSec) > 1.2) {
+      try {
+        audio.currentTime = targetPositionSec;
+      } catch {
+        // Some streams reject random seeks
+      }
+    }
+
+    if (snapshot.playbackState === 'playing' && !deafened) {
+      audio.play().catch(() => {});
+      return;
+    }
+
+    audio.pause();
+  }, [
+    voiceConnected,
+    activeVoiceChannelId,
+    voiceMusicState,
+    outputVolume,
+    selectedOutputDeviceId,
+    deafened,
+    getVoiceMusicDerivedPosition,
+  ]);
+
   const hasRemoteVoicePeers = (
     voiceParticipants.some((participant) => participant.id !== user?.id)
     || remoteAudioStreams.some((remote) => remote.userId !== user?.id)
@@ -1660,6 +2013,9 @@ export function VoiceProvider({ children }) {
         targetAudioBitrate,
         voiceNetworkStats,
         voiceHealth,
+        voiceMusicState,
+        voiceMusicPositionSec,
+        voiceMusicError,
         inputMode,
         pttKey,
         pttPressed,
@@ -1678,6 +2034,17 @@ export function VoiceProvider({ children }) {
         setInputMode,
         setPttKey,
         setMicTestEnabled,
+        requestVoiceMusicState,
+        enqueueVoiceMusic,
+        playVoiceMusic,
+        pauseVoiceMusic,
+        toggleVoiceMusicPlayback,
+        seekVoiceMusic,
+        skipVoiceMusicNext,
+        skipVoiceMusicPrevious,
+        selectVoiceMusicTrack,
+        removeVoiceMusicTrack,
+        clearVoiceMusicQueue,
       }}
     >
       {children}
@@ -1691,6 +2058,15 @@ export function VoiceProvider({ children }) {
             outputDeviceId={selectedOutputDeviceId}
           />
         ))}
+        <audio
+          ref={sharedMusicAudioRef}
+          autoPlay
+          playsInline
+          preload="metadata"
+          onLoadedMetadata={handleSharedMusicMetadata}
+          onEnded={handleSharedMusicEnded}
+          onError={handleSharedMusicError}
+        />
       </div>
     </VoiceContext.Provider>
   );

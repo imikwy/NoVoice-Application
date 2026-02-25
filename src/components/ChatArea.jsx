@@ -33,6 +33,7 @@ import CalendarView from './CalendarView';
 import TasksView from './TasksView';
 import ForumView from './ForumView';
 import AnnouncementsView from './AnnouncementsView';
+import VoiceMusicPanel from './VoiceMusicPanel';
 
 const CHANNEL_HEADER_ICONS = {
   text: Hash,
@@ -122,6 +123,9 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
     pttPressed,
     micTestEnabled,
     micTestLevel,
+    voiceMusicState,
+    voiceMusicPositionSec,
+    voiceMusicError,
     setInputDevice,
     setOutputDevice,
     setInputGain,
@@ -134,6 +138,15 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
     setPrioritizeVoicePackets,
     setInputMode,
     setMicTestEnabled,
+    requestVoiceMusicState,
+    enqueueVoiceMusic,
+    toggleVoiceMusicPlayback,
+    seekVoiceMusic,
+    skipVoiceMusicNext,
+    skipVoiceMusicPrevious,
+    selectVoiceMusicTrack,
+    removeVoiceMusicTrack,
+    clearVoiceMusicQueue,
   } = useVoice();
 
   const [messages, setMessages] = useState([]);
@@ -262,6 +275,11 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
     if (!socket || !isVoice || !activeChannel?.id) return;
     socket.emit('voice:state:request', { channelId: activeChannel.id });
   }, [socket, isVoice, activeChannel?.id]);
+
+  useEffect(() => {
+    if (!isVoice || !activeChannel?.id) return;
+    requestVoiceMusicState(activeChannel.id);
+  }, [isVoice, activeChannel?.id, requestVoiceMusicState]);
 
   // Auto-scroll — only when already near the bottom, or when conversation changes
   const prevConversationKeyRef = useRef(activeConversationKey);
@@ -427,6 +445,7 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
     const micButtonLabel = inputMode === 'ptt'
       ? (pttPressed && !selfMuted ? 'Talking' : 'PTT')
       : (selfMuted ? 'Muted' : 'Mic');
+    const canControlMusic = isOwner || isInThisVoiceChannel;
     const voiceHealthToneClass = voiceHealth?.level === 'good'
       ? 'text-nv-accent border-nv-accent/30 bg-nv-accent/10'
       : voiceHealth?.level === 'fair'
@@ -971,77 +990,98 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
           )}
         </div>
 
-        {/* Members list */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {members.map((member) => {
-            const inVoice = participantIds.has(member.id);
-            const isOnline = onlineUsers.has(member.id) || member.status === 'online';
-            const isMutedForMe = mutedUsers.has(member.id);
+        <div className="flex-1 min-h-0 flex flex-col">
+          {/* Members list */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-2">
+            {members.map((member) => {
+              const inVoice = participantIds.has(member.id);
+              const isOnline = onlineUsers.has(member.id) || member.status === 'online';
+              const isMutedForMe = mutedUsers.has(member.id);
 
-            return (
-              <motion.div
-                key={member.id}
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-nv-surface/20 border border-white/[0.04]"
-              >
-                <UserAvatar user={member} size="sm" showStatus isOnline={isOnline} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-nv-text-primary truncate">
-                    {member.display_name}
-                  </p>
-                  <p className="text-xs text-nv-text-tertiary truncate">@{member.username}</p>
-                </div>
-                <div
-                  className={`text-xs px-2 py-1 rounded-lg border font-medium ${
-                    inVoice
-                      ? 'text-nv-accent border-nv-accent/40 bg-nv-accent/10'
-                      : 'text-nv-text-tertiary border-white/[0.08] bg-white/[0.02]'
-                  }`}
+              return (
+                <motion.div
+                  key={member.id}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-nv-surface/20 border border-white/[0.04]"
                 >
-                  {inVoice ? 'In Voice' : 'Available'}
-                </div>
-                {member.id !== user.id && inVoice && (
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => toggleUserMute(member.id)}
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                        isMutedForMe
-                          ? 'bg-nv-warning/15 text-nv-warning border border-nv-warning/40'
-                          : 'bg-white/[0.03] text-nv-text-tertiary border border-white/[0.08] hover:text-nv-text-primary hover:bg-white/[0.06]'
-                      }`}
-                      title={isMutedForMe ? 'Unmute for me' : 'Mute for me'}
-                    >
-                      {isMutedForMe ? <VolumeX size={14} /> : <Volume2 size={14} />}
-                    </button>
-                    <div className="w-28">
-                      <div className="flex items-center justify-between text-[10px] text-nv-text-tertiary mb-0.5">
-                        <span>Volume</span>
-                        <span>{Math.max(0, Math.min(200, Number(userVolumes[member.id]) || 100))}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={0}
-                        max={200}
-                        step={1}
-                        value={Math.max(0, Math.min(200, Number(userVolumes[member.id]) || 100))}
-                        onChange={(e) => setUserVolume(member.id, Number(e.target.value))}
-                        className="w-full accent-[#34C759]"
-                        disabled={isMutedForMe}
-                        title="Adjust this user's volume"
-                      />
-                    </div>
+                  <UserAvatar user={member} size="sm" showStatus isOnline={isOnline} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-nv-text-primary truncate">
+                      {member.display_name}
+                    </p>
+                    <p className="text-xs text-nv-text-tertiary truncate">@{member.username}</p>
                   </div>
-                )}
-              </motion.div>
-            );
-          })}
+                  <div
+                    className={`text-xs px-2 py-1 rounded-lg border font-medium ${
+                      inVoice
+                        ? 'text-nv-accent border-nv-accent/40 bg-nv-accent/10'
+                        : 'text-nv-text-tertiary border-white/[0.08] bg-white/[0.02]'
+                    }`}
+                  >
+                    {inVoice ? 'In Voice' : 'Available'}
+                  </div>
+                  {member.id !== user.id && inVoice && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => toggleUserMute(member.id)}
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                          isMutedForMe
+                            ? 'bg-nv-warning/15 text-nv-warning border border-nv-warning/40'
+                            : 'bg-white/[0.03] text-nv-text-tertiary border border-white/[0.08] hover:text-nv-text-primary hover:bg-white/[0.06]'
+                        }`}
+                        title={isMutedForMe ? 'Unmute for me' : 'Mute for me'}
+                      >
+                        {isMutedForMe ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                      </button>
+                      <div className="w-28">
+                        <div className="flex items-center justify-between text-[10px] text-nv-text-tertiary mb-0.5">
+                          <span>Volume</span>
+                          <span>{Math.max(0, Math.min(200, Number(userVolumes[member.id]) || 100))}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={200}
+                          step={1}
+                          value={Math.max(0, Math.min(200, Number(userVolumes[member.id]) || 100))}
+                          onChange={(e) => setUserVolume(member.id, Number(e.target.value))}
+                          className="w-full accent-[#34C759]"
+                          disabled={isMutedForMe}
+                          title="Adjust this user's volume"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </motion.div>
+              );
+            })}
 
-          {members.length === 0 && (
-            <div className="text-sm text-nv-text-tertiary py-4 text-center">
-              No members found.
-            </div>
-          )}
+            {members.length === 0 && (
+              <div className="text-sm text-nv-text-tertiary py-4 text-center">
+                No members found.
+              </div>
+            )}
+          </div>
+
+          <VoiceMusicPanel
+            channelId={activeChannel?.id}
+            canControlMusic={canControlMusic}
+            isInThisVoiceChannel={isInThisVoiceChannel}
+            isOwner={isOwner}
+            musicState={voiceMusicState}
+            musicPositionSec={voiceMusicPositionSec}
+            musicError={voiceMusicError}
+            requestVoiceMusicState={requestVoiceMusicState}
+            enqueueVoiceMusic={enqueueVoiceMusic}
+            toggleVoiceMusicPlayback={toggleVoiceMusicPlayback}
+            seekVoiceMusic={seekVoiceMusic}
+            skipVoiceMusicNext={skipVoiceMusicNext}
+            skipVoiceMusicPrevious={skipVoiceMusicPrevious}
+            selectVoiceMusicTrack={selectVoiceMusicTrack}
+            removeVoiceMusicTrack={removeVoiceMusicTrack}
+            clearVoiceMusicQueue={clearVoiceMusicQueue}
+          />
         </div>
       </div>
     );
