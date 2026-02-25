@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { ChevronUp } from 'lucide-react';
 
 function pickPreferredModuleId(modules) {
   if (!Array.isArray(modules) || modules.length === 0) return null;
@@ -19,7 +20,6 @@ function pickPreferredModuleId(modules) {
 
 export default function VoiceActivityDock({
   modules = [],
-  showModuleButtons = false,
 }) {
   const enabledModules = useMemo(
     () => modules.filter((module) => module?.enabled !== false && module?.panel),
@@ -27,32 +27,30 @@ export default function VoiceActivityDock({
   );
 
   const [activeModuleId, setActiveModuleId] = useState(() => pickPreferredModuleId(enabledModules));
+  const [isPanelOpen, setIsPanelOpen] = useState(() => Boolean(pickPreferredModuleId(enabledModules)));
 
   useEffect(() => {
     if (enabledModules.length === 0) {
       setActiveModuleId(null);
+      setIsPanelOpen(false);
       return;
     }
 
     const hasActive = enabledModules.some((module) => module.id === activeModuleId);
     if (!hasActive) {
-      setActiveModuleId(pickPreferredModuleId(enabledModules));
+      const preferredId = pickPreferredModuleId(enabledModules);
+      setActiveModuleId(preferredId);
+      setIsPanelOpen(Boolean(preferredId));
       return;
     }
-
-    if (showModuleButtons) return;
-    const preferredId = pickPreferredModuleId(enabledModules);
-    if (preferredId && preferredId !== activeModuleId) {
-      setActiveModuleId(preferredId);
-    }
-  }, [enabledModules, activeModuleId, showModuleButtons]);
+  }, [enabledModules, activeModuleId]);
 
   const activeModule = enabledModules.find((module) => module.id === activeModuleId) || null;
 
   return (
     <div className="shrink-0 border-t border-white/[0.05] bg-nv-surface/[0.04]">
       <AnimatePresence initial={false}>
-        {activeModule && (
+        {activeModule && isPanelOpen && (
           <motion.div
             key={activeModule.id}
             initial={{ opacity: 0, y: 8 }}
@@ -65,21 +63,45 @@ export default function VoiceActivityDock({
         )}
       </AnimatePresence>
 
-      <div className="h-11 px-4 border-t border-white/[0.05] bg-gradient-to-r from-white/[0.02] via-transparent to-white/[0.02] flex items-center">
+      <div className="h-11 px-4 border-t border-white/[0.05] bg-gradient-to-r from-white/[0.02] via-transparent to-white/[0.02] flex items-center gap-2">
         <span className="text-[10px] uppercase tracking-[0.22em] text-nv-text-tertiary font-semibold">
-          Voice Apps
+          Apps
         </span>
-        <span className="ml-3 text-xs text-nv-text-secondary truncate">
-          {activeModule ? activeModule.label : 'No module active'}
-        </span>
-        {activeModule?.subtitle && (
-          <span className="ml-2 text-[10px] text-nv-text-tertiary truncate">
-            {activeModule.subtitle}
-          </span>
-        )}
-        <span className="ml-auto text-[10px] text-nv-text-tertiary">
-          {enabledModules.length} loaded
-        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {enabledModules.map((module) => {
+            const isActive = module.id === activeModuleId;
+            const isRunning = Boolean(module.isRunning);
+            const isExpanded = isActive && isPanelOpen;
+
+            return (
+              <button
+                key={module.id}
+                onClick={() => {
+                  if (!isActive) {
+                    setActiveModuleId(module.id);
+                    setIsPanelOpen(true);
+                    return;
+                  }
+                  setIsPanelOpen((prev) => !prev);
+                }}
+                className={`h-7 inline-flex items-center gap-1.5 px-2.5 rounded-lg border text-xs transition-all ${
+                  isRunning
+                    ? 'border-nv-accent/45 bg-nv-accent/15 text-nv-accent'
+                    : isExpanded
+                      ? 'border-white/[0.14] bg-white/[0.08] text-nv-text-primary'
+                      : 'border-white/[0.08] bg-white/[0.03] text-nv-text-secondary hover:text-nv-text-primary hover:bg-white/[0.06]'
+                }`}
+                title={`${module.label}${module.subtitle ? ` - ${module.subtitle}` : ''}`}
+              >
+                <span>{module.label}</span>
+                <ChevronUp
+                  size={12}
+                  className={`transition-transform ${isExpanded ? '' : 'rotate-180'} ${isRunning ? 'text-nv-accent' : ''}`}
+                />
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

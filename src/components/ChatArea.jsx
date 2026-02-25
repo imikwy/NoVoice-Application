@@ -453,6 +453,7 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
     const musicQueueCount = Array.isArray(musicStateForChannel?.queue)
       ? musicStateForChannel.queue.length
       : 0;
+    const isMusicRunning = musicStateForChannel?.playbackState === 'playing';
     const hasMusicAttention = Boolean(
       musicStateForChannel?.currentTrack
       || musicQueueCount > 0
@@ -461,10 +462,11 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
     const voiceDockModules = [
       {
         id: 'spotify-sync',
-        label: 'Spotify Sync',
+        label: 'Spotify',
         subtitle: musicQueueCount > 0 ? `${musicQueueCount} queued` : 'Ready',
         defaultExpanded: true,
         autoExpandPriority: hasMusicAttention ? 3 : 1,
+        isRunning: isMusicRunning,
         panel: (
           <VoiceMusicPanel
             channelId={activeChannel?.id}
@@ -1108,7 +1110,6 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
 
           <VoiceActivityDock
             modules={voiceDockModules}
-            showModuleButtons={false}
           />
         </div>
       </div>
