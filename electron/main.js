@@ -19,6 +19,10 @@ const isPortable = Boolean(process.env.PORTABLE_EXECUTABLE_FILE);
 const exePath = app.getPath('exe').toLowerCase();
 const isUnpackedRuntime = exePath.includes('win-unpacked') || exePath.includes('\\dist-electron\\');
 
+// Voice/music features rely on remote media playback (e.g. YouTube iframe player)
+// that is triggered from synchronized socket events, not always direct clicks.
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
 function getUpdaterDisabledReason() {
   if (isDev) return 'Auto updates are disabled in development.';
   if (isPortable) return 'Portable build does not support auto updates.';

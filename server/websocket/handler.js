@@ -87,6 +87,8 @@ function createVoiceMusicTrack({
   streamUrl,
   isPlayable,
   playbackHint,
+  playerType,
+  videoId,
 }) {
   let parsed;
   try {
@@ -119,9 +121,15 @@ function createVoiceMusicTrack({
     }
   }
 
+  const normalizedVideoId = normalizeLabel(videoId, '', 32);
+  const normalizedPlayerType = normalizeLabel(playerType, normalizedVideoId ? 'youtube' : 'audio', 20).toLowerCase();
   const inferredPlayable = isPlayable !== undefined
     ? Boolean(isPlayable)
-    : Boolean(normalizedStreamUrl || inferredSource === 'direct');
+    : Boolean(
+      normalizedStreamUrl
+      || inferredSource === 'direct'
+      || (normalizedPlayerType === 'youtube' && normalizedVideoId)
+    );
   const effectiveStreamUrl = normalizedStreamUrl || (inferredPlayable && inferredSource === 'direct' ? parsed.toString() : null);
 
   return {
@@ -135,6 +143,8 @@ function createVoiceMusicTrack({
     stream_url: effectiveStreamUrl,
     is_playable: inferredPlayable,
     playback_hint: normalizeLabel(playbackHint, inferredPlayable ? 'stream' : 'external', 24),
+    player_type: normalizedPlayerType,
+    video_id: normalizedVideoId,
     requested_by_user_id: requestedByUserId,
     requested_by_name: normalizeLabel(requestedByName, 'Member', 80),
     added_at_ms: Date.now(),
@@ -658,6 +668,8 @@ function setupWebSocket(io) {
           streamUrl: resolvedTrack.streamUrl,
           isPlayable: resolvedTrack.isPlayable,
           playbackHint: resolvedTrack.playbackHint,
+          playerType: resolvedTrack.playerType,
+          videoId: resolvedTrack.videoId,
           requestedByUserId: userId,
           requestedByName,
         }))

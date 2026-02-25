@@ -8,6 +8,7 @@ const spotifyTokenCache = {
   expiresAtMs: 0,
 };
 const deezerPreviewCache = new Map();
+const youtubeSearchCache = new Map();
 
 function normalizeLabel(value, fallback = '', maxLength = 180) {
   const cleaned = String(value || '')
@@ -140,6 +141,8 @@ function toResolvedTrack({
   playbackHint = 'external',
   searchTitle = '',
   searchArtist = '',
+  playerType = 'audio',
+  videoId = '',
 }) {
   return {
     url: String(url || '').trim(),
@@ -153,6 +156,8 @@ function toResolvedTrack({
     playbackHint: String(playbackHint || (isPlayable ? 'stream' : 'external')),
     searchTitle: normalizeLabel(searchTitle, '', 140),
     searchArtist: normalizeLabel(searchArtist, '', 140),
+    playerType: normalizeLabel(playerType || 'audio', 'audio', 20),
+    videoId: normalizeLabel(videoId || '', '', 32),
   };
 }
 
@@ -447,11 +452,37 @@ async function resolveDeezerPreviewForTrack(track) {
   };
 }
 
+async function resolveYouTubeFallbackForSpotifyTrack(track) {
+  if (!track || track.source !== 'spotify' || track.playerType === 'youtube') return track;
+
+  const searchTitle = normalizeLabel(track.searchTitle, normalizeLabel(track.title.split(' - ')[0], '', 140), 140);
+  const searchArtist = normalizeLabel(track.searchArtist, parseArtistFromSpotifyTitle(track.title), 140);
+  const query = normalizeLabel(`${searchTitle} ${searchArtist} official audio`, searchTitle, 220);
+  const videoId = await searchYouTubeVideoId(query);
+  if (!videoId) return track;
+
+  return {
+    ...track,
+    streamUrl: null,
+    isPlayable: true,
+    playbackHint: 'youtube',
+    playerType: 'youtube',
+    videoId,
+    coverUrl: track.coverUrl || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+  };
+}
+
 async function enrichSpotifyTracksWithPreviews(tracks) {
   if (!Array.isArray(tracks) || tracks.length === 0) return tracks || [];
 
-  const mapped = await mapWithConcurrency(
+  const withYoutubeFallback = await mapWithConcurrency(
     tracks,
+    5,
+    async (track) => resolveYouTubeFallbackForSpotifyTrack(track)
+  );
+
+  const mapped = await mapWithConcurrency(
+    withYoutubeFallback,
     6,
     async (track) => resolveDeezerPreviewForTrack(track)
   );
@@ -498,10 +529,36 @@ async function resolveYouTube(urlObj, titleHint) {
       coverUrl: metadata?.thumbnail_url || fallbackCover,
       durationSec: null,
       streamUrl: null,
-      isPlayable: false,
-      playbackHint: 'external',
+      isPlayable: Boolean(videoId),
+      playbackHint: videoId ? 'youtube' : 'external',
+      playerType: videoId ? 'youtube' : 'audio',
+      videoId: videoId || '',
     }),
   ];
+}
+
+function extractYouTubeVideoIdFromSearchHtml(html) {
+  if (!html) return null;
+  const ids = [...String(html).matchAll(/"videoId":"([a-zA-Z0-9_-]{11})"/g)]
+    .map((match) => match[1]);
+  if (ids.length === 0) return null;
+  return [...new Set(ids)][0] || null;
+}
+
+async function searchYouTubeVideoId(query) {
+  const normalizedQuery = normalizeLabel(query, '', 220);
+  if (!normalizedQuery) return null;
+
+  const cacheKey = normalizedQuery.toLowerCase();
+  if (youtubeSearchCache.has(cacheKey)) {
+    return youtubeSearchCache.get(cacheKey);
+  }
+
+  const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(normalizedQuery)}`;
+  const html = await fetchText(searchUrl, {}, 6500);
+  const videoId = extractYouTubeVideoIdFromSearchHtml(html);
+  youtubeSearchCache.set(cacheKey, videoId || null);
+  return videoId || null;
 }
 
 function resolveDirect(urlObj, titleHint) {
