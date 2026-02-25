@@ -34,6 +34,7 @@ import TasksView from './TasksView';
 import ForumView from './ForumView';
 import AnnouncementsView from './AnnouncementsView';
 import VoiceMusicPanel from './VoiceMusicPanel';
+import VoiceActivityDock from './VoiceActivityDock';
 
 const CHANNEL_HEADER_ICONS = {
   text: Hash,
@@ -446,6 +447,47 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
       ? (pttPressed && !selfMuted ? 'Talking' : 'PTT')
       : (selfMuted ? 'Muted' : 'Mic');
     const canControlMusic = isOwner || isInThisVoiceChannel;
+    const musicStateForChannel = voiceMusicState?.channelId === activeChannel?.id
+      ? voiceMusicState
+      : null;
+    const musicQueueCount = Array.isArray(musicStateForChannel?.queue)
+      ? musicStateForChannel.queue.length
+      : 0;
+    const hasMusicAttention = Boolean(
+      musicStateForChannel?.currentTrack
+      || musicQueueCount > 0
+      || voiceMusicError
+    );
+    const voiceDockModules = [
+      {
+        id: 'spotify-sync',
+        label: 'Spotify Sync',
+        subtitle: musicQueueCount > 0 ? `${musicQueueCount} queued` : 'Ready',
+        defaultExpanded: true,
+        autoExpandPriority: hasMusicAttention ? 3 : 1,
+        panel: (
+          <VoiceMusicPanel
+            channelId={activeChannel?.id}
+            canControlMusic={canControlMusic}
+            isInThisVoiceChannel={isInThisVoiceChannel}
+            isOwner={isOwner}
+            musicState={voiceMusicState}
+            musicPositionSec={voiceMusicPositionSec}
+            musicError={voiceMusicError}
+            requestVoiceMusicState={requestVoiceMusicState}
+            enqueueVoiceMusic={enqueueVoiceMusic}
+            toggleVoiceMusicPlayback={toggleVoiceMusicPlayback}
+            seekVoiceMusic={seekVoiceMusic}
+            skipVoiceMusicNext={skipVoiceMusicNext}
+            skipVoiceMusicPrevious={skipVoiceMusicPrevious}
+            selectVoiceMusicTrack={selectVoiceMusicTrack}
+            removeVoiceMusicTrack={removeVoiceMusicTrack}
+            clearVoiceMusicQueue={clearVoiceMusicQueue}
+            embeddedInDock
+          />
+        ),
+      },
+    ];
     const voiceHealthToneClass = voiceHealth?.level === 'good'
       ? 'text-nv-accent border-nv-accent/30 bg-nv-accent/10'
       : voiceHealth?.level === 'fair'
@@ -1064,23 +1106,9 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
             )}
           </div>
 
-          <VoiceMusicPanel
-            channelId={activeChannel?.id}
-            canControlMusic={canControlMusic}
-            isInThisVoiceChannel={isInThisVoiceChannel}
-            isOwner={isOwner}
-            musicState={voiceMusicState}
-            musicPositionSec={voiceMusicPositionSec}
-            musicError={voiceMusicError}
-            requestVoiceMusicState={requestVoiceMusicState}
-            enqueueVoiceMusic={enqueueVoiceMusic}
-            toggleVoiceMusicPlayback={toggleVoiceMusicPlayback}
-            seekVoiceMusic={seekVoiceMusic}
-            skipVoiceMusicNext={skipVoiceMusicNext}
-            skipVoiceMusicPrevious={skipVoiceMusicPrevious}
-            selectVoiceMusicTrack={selectVoiceMusicTrack}
-            removeVoiceMusicTrack={removeVoiceMusicTrack}
-            clearVoiceMusicQueue={clearVoiceMusicQueue}
+          <VoiceActivityDock
+            modules={voiceDockModules}
+            showModuleButtons={false}
           />
         </div>
       </div>

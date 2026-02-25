@@ -44,6 +44,7 @@ export default function VoiceMusicPanel({
   selectVoiceMusicTrack,
   removeVoiceMusicTrack,
   clearVoiceMusicQueue,
+  embeddedInDock = false,
 }) {
   const [trackUrl, setTrackUrl] = useState('');
   const [trackTitle, setTrackTitle] = useState('');
@@ -90,7 +91,7 @@ export default function VoiceMusicPanel({
     : 0;
 
   return (
-    <div className="border-t border-white/[0.05] bg-gradient-to-t from-black/20 to-transparent px-4 pb-4 pt-3">
+    <div className={`${embeddedInDock ? '' : 'border-t border-white/[0.05]'} bg-gradient-to-t from-black/20 to-transparent px-4 pb-4 pt-3`}>
       <div className="grid gap-3 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
         <div className="rounded-2xl border border-white/[0.08] bg-nv-surface/20 p-3">
           <div className="flex items-center gap-2 mb-2">
