@@ -1879,8 +1879,12 @@ export function VoiceProvider({ children }) {
 
     const tick = () => {
       const audio = sharedMusicAudioRef.current;
+      // readyState > 0 (HAVE_METADATA+) ensures audio actually has a loaded source.
+      // Without this guard, a src-less audio element returns currentTime=0 (finite)
+      // and masks the server-derived advancing position entirely.
       if (
         audio
+        && audio.readyState > 0
         && Number.isFinite(audio.currentTime)
         && snapshot.channelId === joinedVoiceChannelRef.current
         && snapshot.currentTrack?.id === sharedMusicTrackRef.current
