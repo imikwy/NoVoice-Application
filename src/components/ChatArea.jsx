@@ -34,6 +34,7 @@ import TasksView from './TasksView';
 import ForumView from './ForumView';
 import AnnouncementsView from './AnnouncementsView';
 import VoiceMusicPanel from './VoiceMusicPanel';
+import VoiceWhiteboard from './VoiceWhiteboard';
 import VoiceActivityDock from './VoiceActivityDock';
 
 const CHANNEL_HEADER_ICONS = {
@@ -462,7 +463,7 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
     const voiceDockModules = [
       {
         id: 'spotify-sync',
-        label: 'Spotify',
+        label: 'Music',
         subtitle: musicQueueCount > 0 ? `${musicQueueCount} queued` : 'Ready',
         defaultExpanded: true,
         autoExpandPriority: hasMusicAttention ? 3 : 1,
@@ -486,6 +487,21 @@ export default function ChatArea({ onToggleMembers, showMembers }) {
             removeVoiceMusicTrack={removeVoiceMusicTrack}
             clearVoiceMusicQueue={clearVoiceMusicQueue}
             embeddedInDock
+          />
+        ),
+      },
+      {
+        id: 'voice-whiteboard',
+        label: 'Whiteboard',
+        subtitle: 'Shared canvas',
+        defaultExpanded: false,
+        autoExpandPriority: 0,
+        isRunning: false,
+        panel: (
+          <VoiceWhiteboard
+            channelId={activeChannel?.id}
+            voiceParticipants={voiceParticipants}
+            isInChannel={isInThisVoiceChannel}
           />
         ),
       },

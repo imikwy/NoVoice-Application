@@ -9,6 +9,44 @@ const voiceChannelMembers = new Map(); // channelId -> Map<userId, user summary>
 const socketVoiceChannel = new Map(); // socketId -> channelId
 const voiceChannelServerMap = new Map(); // channelId -> serverIdasdasd
 const voiceMusicSessions = new Map(); // channelId -> synced queue + transport state
+const whiteboardSessions = new Map(); // channelId -> whiteboard session
+
+const WB_CURSOR_COLORS = ['#0A84FF', '#FF3B30', '#FF9F0A', '#BF5AF2', '#FF2D55', '#5AC8FA', '#FFD60A', '#30D158'];
+
+function getOrCreateWbSession(channelId, creatorId) {
+  if (!whiteboardSessions.has(channelId)) {
+    whiteboardSessions.set(channelId, {
+      channelId,
+      creatorId,
+      elements: [],
+      strokes: [],
+      permissions: new Map(), // userId -> boolean (false = view-only)
+      activeUsers: new Map(), // userId -> { name, color, cursor }
+      colorIdx: 0,
+    });
+  }
+  return whiteboardSessions.get(channelId);
+}
+
+function serializeWbSession(session) {
+  return {
+    channelId: session.channelId,
+    creatorId: session.creatorId,
+    elements: session.elements,
+    strokes: session.strokes,
+    permissions: Object.fromEntries(session.permissions),
+    activeUsers: Object.fromEntries(
+      [...session.activeUsers.entries()].map(([id, u]) => [id, { name: u.name, color: u.color, cursor: u.cursor || null }])
+    ),
+  };
+}
+
+function emitWbUsers(io, session) {
+  const users = Object.fromEntries(
+    [...session.activeUsers.entries()].map(([id, u]) => [id, { name: u.name, color: u.color }])
+  );
+  io.to(`whiteboard:${session.channelId}`).emit('whiteboard:users:update', users);
+}
 
 const DM_EXPIRY_DAYS = 7;
 const MAX_VOICE_MUSIC_QUEUE = 100;
@@ -955,7 +993,107 @@ function setupWebSocket(io) {
       if (channelId) socket.leave(`channel:${channelId}`);
     });
 
+    // ── Whiteboard ───────────────────────────────────────────────────────────
+    socket.on('whiteboard:join', ({ channelId } = {}) => {
+      if (!channelId) return;
+      const voiceChId = socketVoiceChannel.get(socket.id);
+      if (voiceChId !== String(channelId)) return; // must be in the voice channel
+
+      const dbUser = getDb().prepare('SELECT display_name FROM users WHERE id = ?').get(userId);
+      const displayName = dbUser?.display_name || 'User';
+
+      const session = getOrCreateWbSession(String(channelId), userId);
+
+      if (!session.activeUsers.has(userId)) {
+        const color = WB_CURSOR_COLORS[session.colorIdx % WB_CURSOR_COLORS.length];
+        session.colorIdx += 1;
+        session.activeUsers.set(userId, { name: displayName, color, cursor: null });
+      }
+
+      socket.join(`whiteboard:${channelId}`);
+      socket.emit('whiteboard:state', serializeWbSession(session));
+      emitWbUsers(io, session);
+    });
+
+    socket.on('whiteboard:leave', ({ channelId } = {}) => {
+      if (!channelId) return;
+      const session = whiteboardSessions.get(String(channelId));
+      if (!session) return;
+      session.activeUsers.delete(userId);
+      socket.leave(`whiteboard:${channelId}`);
+      emitWbUsers(io, session);
+    });
+
+    socket.on('whiteboard:cursor', ({ channelId, x, y } = {}) => {
+      const session = whiteboardSessions.get(String(channelId));
+      if (!session || !session.activeUsers.has(userId)) return;
+      session.activeUsers.get(userId).cursor = { x: Number(x) || 0, y: Number(y) || 0 };
+      socket.to(`whiteboard:${channelId}`).emit('whiteboard:cursor', { userId, x, y });
+    });
+
+    socket.on('whiteboard:element:add', ({ channelId, element } = {}) => {
+      const session = whiteboardSessions.get(String(channelId));
+      if (!session || !element) return;
+      if (session.permissions.get(userId) === false && userId !== session.creatorId) return;
+      const el = { ...element, id: element.id || uuidv4(), addedBy: userId };
+      session.elements.push(el);
+      io.to(`whiteboard:${channelId}`).emit('whiteboard:element:added', { element: el });
+    });
+
+    socket.on('whiteboard:element:update', ({ channelId, element } = {}) => {
+      const session = whiteboardSessions.get(String(channelId));
+      if (!session || !element?.id) return;
+      if (session.permissions.get(userId) === false && userId !== session.creatorId) return;
+      const idx = session.elements.findIndex((e) => e.id === element.id);
+      if (idx === -1) return;
+      session.elements[idx] = { ...session.elements[idx], ...element };
+      io.to(`whiteboard:${channelId}`).emit('whiteboard:element:updated', { element: session.elements[idx] });
+    });
+
+    socket.on('whiteboard:element:delete', ({ channelId, elementId } = {}) => {
+      const session = whiteboardSessions.get(String(channelId));
+      if (!session || !elementId) return;
+      if (session.permissions.get(userId) === false && userId !== session.creatorId) return;
+      session.elements = session.elements.filter((e) => e.id !== elementId);
+      io.to(`whiteboard:${channelId}`).emit('whiteboard:element:deleted', { elementId });
+    });
+
+    socket.on('whiteboard:stroke:add', ({ channelId, stroke } = {}) => {
+      const session = whiteboardSessions.get(String(channelId));
+      if (!session || !stroke?.points?.length) return;
+      if (session.permissions.get(userId) === false && userId !== session.creatorId) return;
+      const s = { ...stroke, id: stroke.id || uuidv4(), userId };
+      session.strokes.push(s);
+      io.to(`whiteboard:${channelId}`).emit('whiteboard:stroke:added', { stroke: s });
+    });
+
+    socket.on('whiteboard:clear', ({ channelId } = {}) => {
+      const session = whiteboardSessions.get(String(channelId));
+      if (!session || userId !== session.creatorId) return;
+      session.elements = [];
+      session.strokes = [];
+      io.to(`whiteboard:${channelId}`).emit('whiteboard:cleared');
+    });
+
+    socket.on('whiteboard:permission:set', ({ channelId, targetUserId, canDraw } = {}) => {
+      const session = whiteboardSessions.get(String(channelId));
+      if (!session || userId !== session.creatorId || !targetUserId) return;
+      if (String(targetUserId) === session.creatorId) return;
+      session.permissions.set(String(targetUserId), Boolean(canDraw));
+      io.to(`whiteboard:${channelId}`).emit('whiteboard:permissions', {
+        permissions: Object.fromEntries(session.permissions),
+      });
+    });
+
     socket.on('disconnect', () => {
+      // Clean up whiteboard presence on disconnect
+      whiteboardSessions.forEach((session) => {
+        if (session.activeUsers.has(userId)) {
+          session.activeUsers.delete(userId);
+          emitWbUsers(io, session);
+        }
+      });
+
       leaveVoiceChannel(io, socket);
 
       const userSockets = onlineUsers.get(userId);
