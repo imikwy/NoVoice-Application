@@ -1955,6 +1955,8 @@ export function VoiceProvider({ children }) {
   const handleSharedMusicError = useCallback(() => {
     const snapshot = voiceMusicStateRef.current;
     if (!snapshot?.currentTrack?.isPlayable) return;
+    // YouTube tracks use the YT IFrame player — audio element errors don't apply
+    if (snapshot.currentTrack?.playerType === 'youtube') return;
     setVoiceMusicError('Track could not be played on this device/link.');
   }, []);
 

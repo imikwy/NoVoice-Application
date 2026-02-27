@@ -67,6 +67,8 @@ function createVoiceMusicTrack({
   streamUrl,
   isPlayable,
   playbackHint,
+  playerType,
+  videoId,
 }) {
   let parsed;
   try {
@@ -97,8 +99,8 @@ function createVoiceMusicTrack({
     }
   }
 
-  const normalizedVideoId = '';
-  const normalizedPlayerType = 'audio';
+  const normalizedPlayerType = normalizeLabel(playerType || 'audio', 'audio', 20).toLowerCase();
+  const normalizedVideoId = normalizeLabel(videoId || '', '', 32);
   const inferredPlayable = isPlayable !== undefined
     ? Boolean(isPlayable)
     : Boolean(normalizedStreamUrl || inferredSource === 'direct');
@@ -651,6 +653,8 @@ function setupWebSocket(io) {
           streamUrl: resolvedTrack.streamUrl,
           isPlayable: resolvedTrack.isPlayable,
           playbackHint: resolvedTrack.playbackHint,
+          playerType: resolvedTrack.playerType,
+          videoId: resolvedTrack.videoId,
           requestedByUserId: userId,
           requestedByName,
         }))
@@ -659,7 +663,7 @@ function setupWebSocket(io) {
       if (createdTracks.length === 0) {
         socket.emit('voice:music:error', {
           channelId: channel.id,
-          message: 'No playable in-app preview found for this Spotify link.',
+          message: 'No playable tracks found for this link.',
         });
         return;
       }
