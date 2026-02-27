@@ -1,4 +1,8 @@
+let ytdl = null;
+try { ytdl = require('@distube/ytdl-core'); } catch { ytdl = null; }
+
 const MAX_RESOLVED_TRACKS = 120;
+const YOUTUBE_AUDIO_CACHE_MAX = 400;
 
 const SUPPORTED_SPOTIFY_TYPES = new Set(['track', 'playlist', 'album']);
 
@@ -7,6 +11,7 @@ const spotifyTokenCache = {
   expiresAtMs: 0,
 };
 const deezerPreviewCache = new Map();
+const youtubeAudioCache = new Map();
 
 function normalizeLabel(value, fallback = '', maxLength = 180) {
   const cleaned = String(value || '')
@@ -58,19 +63,52 @@ function extractYoutubeVideoId(urlObj) {
   return null;
 }
 
+async function extractYoutubeAudio(videoId) {
+  if (!ytdl) return null;
+  try {
+    const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const info = await ytdl.getBasicInfo(canonicalUrl);
+    const format = ytdl.chooseFormat(info.formats, { quality: 'highestaudio', filter: 'audioonly' });
+    if (!format?.url) return null;
+    return {
+      streamUrl: format.url,
+      durationSec: clampDurationSec(Number(info.videoDetails?.lengthSeconds)),
+      title: normalizeLabel(info.videoDetails?.title, ''),
+      coverUrl: (() => {
+        const thumbs = info.videoDetails?.thumbnails;
+        return Array.isArray(thumbs) ? (thumbs[thumbs.length - 1]?.url || null) : null;
+      })(),
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function resolveYoutube(urlObj, titleHint) {
   const videoId = extractYoutubeVideoId(urlObj);
   if (!videoId) return { tracks: [], error: 'invalid_youtube_url' };
 
   const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
-  const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(canonicalUrl)}&format=json`;
-  const metadata = await fetchJson(oembedUrl, {}, 6000);
+
+  // Try to get direct audio stream via ytdl-core
+  const audioInfo = await extractYoutubeAudio(videoId);
+
+  // Fall back to oEmbed for metadata if ytdl-core unavailable or failed
+  let oembedTitle = '';
+  let oembedCover = null;
+  if (!audioInfo) {
+    const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(canonicalUrl)}&format=json`;
+    const metadata = await fetchJson(oembedUrl, {}, 6000);
+    oembedTitle = metadata?.title || '';
+    oembedCover = metadata?.thumbnail_url || null;
+  }
 
   const title = normalizeLabel(
-    titleHint || metadata?.title || inferTitleFromUrl(urlObj),
+    titleHint || audioInfo?.title || oembedTitle || inferTitleFromUrl(urlObj),
     'YouTube Video'
   );
-  const coverUrl = metadata?.thumbnail_url
+  const coverUrl = audioInfo?.coverUrl
+    || oembedCover
     || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
 
   return {
@@ -80,11 +118,11 @@ async function resolveYoutube(urlObj, titleHint) {
         title,
         source: 'youtube',
         coverUrl,
-        durationSec: null,
-        streamUrl: null,
-        isPlayable: true,
-        playbackHint: 'youtube',
-        playerType: 'youtube',
+        durationSec: audioInfo?.durationSec || null,
+        streamUrl: audioInfo?.streamUrl || null,
+        isPlayable: Boolean(audioInfo?.streamUrl),
+        playbackHint: audioInfo?.streamUrl ? 'stream' : 'external',
+        playerType: 'audio',
         videoId,
       }),
     ],
@@ -482,13 +520,74 @@ async function resolveDeezerPreviewForTrack(track) {
   };
 }
 
+async function searchYoutubeFirstVideoId(query) {
+  const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIQAQ%3D%3D`;
+  const html = await fetchText(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept-Language': 'en-US,en;q=0.9',
+    },
+  }, 8000);
+  if (!html) return null;
+  const match = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+  return match?.[1] || null;
+}
+
+async function resolveSpotifyTrackViaYoutube(track, searchTitle, searchArtist) {
+  if (!ytdl || !searchTitle) return track;
+
+  const query = [searchTitle, searchArtist].filter(Boolean).join(' ');
+  const cacheKey = query.toLowerCase();
+
+  if (youtubeAudioCache.has(cacheKey)) {
+    const cached = youtubeAudioCache.get(cacheKey);
+    if (!cached) return track;
+    return { ...track, streamUrl: cached.streamUrl, isPlayable: true, playbackHint: 'stream', durationSec: cached.durationSec || track.durationSec };
+  }
+
+  const videoId = await searchYoutubeFirstVideoId(`${query} audio`);
+  if (!videoId) {
+    if (youtubeAudioCache.size >= YOUTUBE_AUDIO_CACHE_MAX) youtubeAudioCache.delete(youtubeAudioCache.keys().next().value);
+    youtubeAudioCache.set(cacheKey, null);
+    return track;
+  }
+
+  const audioInfo = await extractYoutubeAudio(videoId);
+  if (!audioInfo?.streamUrl) {
+    if (youtubeAudioCache.size >= YOUTUBE_AUDIO_CACHE_MAX) youtubeAudioCache.delete(youtubeAudioCache.keys().next().value);
+    youtubeAudioCache.set(cacheKey, null);
+    return track;
+  }
+
+  if (youtubeAudioCache.size >= YOUTUBE_AUDIO_CACHE_MAX) youtubeAudioCache.delete(youtubeAudioCache.keys().next().value);
+  youtubeAudioCache.set(cacheKey, { streamUrl: audioInfo.streamUrl, durationSec: audioInfo.durationSec });
+
+  return {
+    ...track,
+    streamUrl: audioInfo.streamUrl,
+    isPlayable: true,
+    playbackHint: 'stream',
+    durationSec: audioInfo.durationSec || track.durationSec,
+  };
+}
+
 async function enrichSpotifyTracksWithPreviews(tracks) {
   if (!Array.isArray(tracks) || tracks.length === 0) return tracks || [];
 
   const mapped = await mapWithConcurrency(
     tracks,
-    6,
-    async (track) => resolveDeezerPreviewForTrack(track)
+    4,
+    async (track) => {
+      const searchTitle = normalizeLabel(track.searchTitle, normalizeLabel(track.title.split(' - ')[0], '', 140), 140);
+      const searchArtist = normalizeLabel(track.searchArtist, parseArtistFromSpotifyTitle(track.title), 140);
+
+      // Prefer YouTube for full-length song playback
+      const ytTrack = await resolveSpotifyTrackViaYoutube(track, searchTitle, searchArtist);
+      if (ytTrack.isPlayable) return ytTrack;
+
+      // Fall back to Deezer 30s preview
+      return resolveDeezerPreviewForTrack(track);
+    }
   );
 
   return mapped.map((track) => {

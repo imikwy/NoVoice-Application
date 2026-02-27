@@ -530,11 +530,6 @@ export function VoiceProvider({ children }) {
   const sharedMusicAudioRef = useRef(null);
   const sharedMusicTrackRef = useRef('');
   const sharedMusicDurationSentRef = useRef('');
-  const ytPlayerRef = useRef(null);
-  const ytMountContainerRef = useRef(null);
-  const ytPlayerReadyRef = useRef(false);
-  const ytLoadedVideoIdRef = useRef('');
-  const ytDurationSentRef = useRef('');
 
   useEffect(() => {
     socketRef.current = socket;
@@ -1887,23 +1882,6 @@ export function VoiceProvider({ children }) {
     }
 
     const tick = () => {
-      const isYoutube = snapshot.currentTrack?.playerType === 'youtube';
-
-      if (isYoutube) {
-        const player = ytPlayerRef.current;
-        if (player && ytPlayerReadyRef.current) {
-          try {
-            const t = player.getCurrentTime?.();
-            if (Number.isFinite(t)) {
-              setVoiceMusicPositionSec(clampMusicSeconds(t));
-              return;
-            }
-          } catch {}
-        }
-        setVoiceMusicPositionSec(getVoiceMusicDerivedPosition(snapshot));
-        return;
-      }
-
       const audio = sharedMusicAudioRef.current;
       // readyState > 0 (HAVE_METADATA+) ensures audio actually has a loaded source.
       // Without this guard, a src-less audio element returns currentTime=0 (finite)
@@ -1955,8 +1933,6 @@ export function VoiceProvider({ children }) {
   const handleSharedMusicError = useCallback(() => {
     const snapshot = voiceMusicStateRef.current;
     if (!snapshot?.currentTrack?.isPlayable) return;
-    // YouTube tracks use the YT IFrame player — audio element errors don't apply
-    if (snapshot.currentTrack?.playerType === 'youtube') return;
     setVoiceMusicError('Track could not be played on this device/link.');
   }, []);
 
@@ -1964,15 +1940,6 @@ export function VoiceProvider({ children }) {
     const audio = sharedMusicAudioRef.current;
     const snapshot = voiceMusicState;
     if (!audio) return;
-
-    // YouTube tracks are handled by the YT IFrame player — skip here
-    if (snapshot.currentTrack?.playerType === 'youtube') {
-      audio.pause();
-      audio.removeAttribute('src');
-      sharedMusicTrackRef.current = '';
-      sharedMusicDurationSentRef.current = '';
-      return;
-    }
 
     const shouldAttach = Boolean(
       voiceConnected
@@ -2048,143 +2015,6 @@ export function VoiceProvider({ children }) {
     selectedOutputDeviceId,
     deafened,
     getVoiceMusicDerivedPosition,
-  ]);
-
-  // Load YouTube IFrame API once
-  useEffect(() => {
-    if (window.YT?.Player) return;
-    const script = document.createElement('script');
-    script.src = 'https://www.youtube.com/iframe_api';
-    script.async = true;
-    document.head.appendChild(script);
-  }, []);
-
-  // YouTube player sync
-  useEffect(() => {
-    const snapshot = voiceMusicState;
-    const track = snapshot?.currentTrack;
-    const isYoutube = track?.playerType === 'youtube';
-
-    const destroyYt = () => {
-      if (ytPlayerRef.current) {
-        try { ytPlayerRef.current.destroy(); } catch {}
-        ytPlayerRef.current = null;
-      }
-      ytPlayerReadyRef.current = false;
-      ytLoadedVideoIdRef.current = '';
-    };
-
-    if (
-      !isYoutube
-      || !snapshot?.channelId
-      || !voiceConnected
-      || !activeVoiceChannelId
-      || snapshot.channelId !== activeVoiceChannelId
-    ) {
-      destroyYt();
-      return;
-    }
-
-    const videoId = track.videoId;
-    if (!videoId) { destroyYt(); return; }
-
-    const syncPlayback = () => {
-      const player = ytPlayerRef.current;
-      if (!player || !ytPlayerReadyRef.current) return;
-      const s = voiceMusicStateRef.current;
-      if (!s) return;
-
-      const targetSec = getVoiceMusicDerivedPosition(s);
-      let currentSec = 0;
-      try { currentSec = player.getCurrentTime?.() || 0; } catch {}
-      if (Math.abs(currentSec - targetSec) > 1.5) {
-        try { player.seekTo(targetSec, true); } catch {}
-      }
-
-      if (deafened) {
-        try { player.mute?.(); } catch {}
-      } else {
-        try {
-          player.unMute?.();
-          player.setVolume?.(clamp(outputVolume, 0, 100));
-        } catch {}
-      }
-
-      if (s.playbackState === 'playing' && !deafened) {
-        try { player.playVideo?.(); } catch {}
-      } else {
-        try { player.pauseVideo?.(); } catch {}
-      }
-    };
-
-    const createPlayer = () => {
-      if (!window.YT?.Player) return;
-      const container = ytMountContainerRef.current;
-      if (!container) return;
-
-      if (ytPlayerRef.current && ytLoadedVideoIdRef.current === videoId) {
-        syncPlayback();
-        return;
-      }
-
-      destroyYt();
-      ytLoadedVideoIdRef.current = videoId;
-
-      // YT.Player replaces the element — create a fresh div each time
-      const mount = document.createElement('div');
-      container.innerHTML = '';
-      container.appendChild(mount);
-
-      ytPlayerRef.current = new window.YT.Player(mount, {
-        videoId,
-        playerVars: { autoplay: 0, controls: 0, disablekb: 1, fs: 0, iv_load_policy: 3, modestbranding: 1 },
-        events: {
-          onReady: (event) => {
-            ytPlayerReadyRef.current = true;
-            // Report duration to server
-            const duration = event.target.getDuration?.();
-            if (Number.isFinite(duration) && duration > 0 && socketRef.current) {
-              const s = voiceMusicStateRef.current;
-              if (s?.channelId && s?.currentTrack?.id && ytDurationSentRef.current !== s.currentTrack.id) {
-                ytDurationSentRef.current = s.currentTrack.id;
-                socketRef.current.emit('voice:music:track:duration', {
-                  channelId: s.channelId,
-                  trackId: s.currentTrack.id,
-                  durationSec: clampMusicSeconds(duration),
-                });
-              }
-            }
-            syncPlayback();
-          },
-          onStateChange: (event) => {
-            if (event.data === window.YT?.PlayerState?.ENDED) {
-              handleSharedMusicEnded();
-            }
-          },
-          onError: () => {
-            setVoiceMusicError('YouTube video could not be played.');
-          },
-        },
-      });
-    };
-
-    if (window.YT?.Player) {
-      createPlayer();
-    } else {
-      const prev = window.onYouTubeIframeAPIReady;
-      window.onYouTubeIframeAPIReady = () => {
-        if (typeof prev === 'function') prev();
-        createPlayer();
-      };
-    }
-  }, [
-    voiceConnected,
-    activeVoiceChannelId,
-    voiceMusicState,
-    outputVolume,
-    deafened,
-    getVoiceMusicDerivedPosition,
-    handleSharedMusicEnded,
   ]);
 
   const hasRemoteVoicePeers = (
@@ -2278,10 +2108,6 @@ export function VoiceProvider({ children }) {
           onLoadedMetadata={handleSharedMusicMetadata}
           onEnded={handleSharedMusicEnded}
           onError={handleSharedMusicError}
-        />
-        <div
-          ref={ytMountContainerRef}
-          style={{ width: 1, height: 1, overflow: 'hidden', position: 'absolute', pointerEvents: 'none' }}
         />
       </div>
     </VoiceContext.Provider>
