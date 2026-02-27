@@ -116,16 +116,16 @@ export default function VoiceMusicPanel({
                 {currentTrack?.title || 'Queue a track to start listening'}
               </p>
               <p className="text-[11px] text-nv-text-tertiary truncate">
-                {currentTrack ? `${currentTrack.sourceLabel} - requested by ${currentTrack.requestedByName}` : 'Spotify tracks and playlists are resolved automatically.'}
+                {currentTrack ? `${currentTrack.sourceLabel} - requested by ${currentTrack.requestedByName}` : 'Paste a YouTube or Spotify URL to start.'}
               </p>
               {currentTrack?.playbackHint === 'preview' && (
                 <p className="text-[10px] text-nv-accent/90 mt-0.5">Preview stream (about 30s)</p>
               )}
             </div>
           </div>
-          {hasTrack && !currentTrackPlayable && (
+          {hasTrack && !currentTrackPlayable && currentTrack?.playerType !== 'youtube' && (
             <p className="text-[10px] text-nv-text-tertiary mt-2">
-              No playable in-app preview was found for this Spotify entry.
+              No playable in-app preview was found for this entry.
             </p>
           )}
 
@@ -167,7 +167,7 @@ export default function VoiceMusicPanel({
               step={1}
               value={Math.min(seekMax, effectivePosition)}
               onChange={(e) => seekVoiceMusic(channelId, Number(e.target.value))}
-              disabled={!canControl || !hasTrack || !currentTrackPlayable}
+              disabled={!canControl || !hasTrack || (!currentTrackPlayable && currentTrack?.playerType !== 'youtube')}
               className="ml-1 flex-1 accent-[#34C759] disabled:opacity-50"
               title={hasDuration ? 'Seek track position' : 'Seeking works best when duration is known'}
             />
@@ -271,7 +271,7 @@ export default function VoiceMusicPanel({
                       {isPlaying ? 'Playing live' : playbackState === 'paused' ? 'Paused' : 'Ready'}
                     </p>
                   )}
-                  {!isActive && !track.isPlayable && (
+                  {!isActive && !track.isPlayable && track.playerType !== 'youtube' && (
                     <p className="text-[10px] text-nv-text-tertiary mt-1">
                       No playable preview for this entry
                     </p>
@@ -295,7 +295,7 @@ export default function VoiceMusicPanel({
                         handleQueueTrack();
                       }
                     }}
-                    placeholder="Paste Spotify track/playlist URL"
+                    placeholder="Paste YouTube or Spotify URL"
                     disabled={!canControl}
                     className="w-full h-8 rounded-lg border border-white/[0.1] bg-black/25 pl-8 pr-2 text-xs text-nv-text-primary placeholder:text-nv-text-tertiary/70 focus:outline-none focus:border-nv-accent/45 disabled:opacity-50"
                   />

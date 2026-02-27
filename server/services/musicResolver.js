@@ -37,10 +37,59 @@ function inferTitleFromUrl(urlObj) {
 
 function sourceLabel(source) {
   if (source === 'spotify') return 'Spotify';
+  if (source === 'youtube') return 'YouTube';
   if (source === 'soundcloud') return 'SoundCloud';
   if (source === 'bandcamp') return 'Bandcamp';
   if (source === 'mixcloud') return 'Mixcloud';
   return 'Audio Link';
+}
+
+function extractYoutubeVideoId(urlObj) {
+  const host = urlObj.hostname.toLowerCase();
+  if (host.includes('youtu.be')) {
+    return urlObj.pathname.split('/').filter(Boolean)[0] || null;
+  }
+  if (host.includes('youtube.com')) {
+    const v = urlObj.searchParams.get('v');
+    if (v) return v;
+    const parts = urlObj.pathname.split('/').filter(Boolean);
+    if (['shorts', 'embed', 'v'].includes(parts[0])) return parts[1] || null;
+  }
+  return null;
+}
+
+async function resolveYoutube(urlObj, titleHint) {
+  const videoId = extractYoutubeVideoId(urlObj);
+  if (!videoId) return { tracks: [], error: 'invalid_youtube_url' };
+
+  const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(canonicalUrl)}&format=json`;
+  const metadata = await fetchJson(oembedUrl, {}, 6000);
+
+  const title = normalizeLabel(
+    titleHint || metadata?.title || inferTitleFromUrl(urlObj),
+    'YouTube Video'
+  );
+  const coverUrl = metadata?.thumbnail_url
+    || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+
+  return {
+    tracks: [
+      toResolvedTrack({
+        url: canonicalUrl,
+        title,
+        source: 'youtube',
+        coverUrl,
+        durationSec: null,
+        streamUrl: null,
+        isPlayable: true,
+        playbackHint: 'youtube',
+        playerType: 'youtube',
+        videoId,
+      }),
+    ],
+    error: null,
+  };
 }
 
 function inferSource(hostname) {
@@ -488,6 +537,10 @@ async function resolveMusicInputUrl(inputUrl, { titleHint = '', maxTracks = MAX_
   if (source === 'spotify') {
     const tracks = await resolveSpotify(parsedUrl, { titleHint, maxTracks: boundedMax });
     return { tracks: tracks.slice(0, boundedMax), error: null };
+  }
+
+  if (source === 'youtube') {
+    return resolveYoutube(parsedUrl, titleHint);
   }
 
   return { tracks: [], error: 'unsupported_source' };
